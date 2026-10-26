@@ -579,7 +579,10 @@ function QuestionDockForm({
 											: "Question"}
 					{qd.mode === "multi-select" && " · select all that apply"}
 				</div>
-				<div className="mb-3 font-medium">
+				{/* Regular weight (bold-contrast round, 2026-10-26): the old
+				    font-medium swallowed the bold phrases inside the question;
+				    the eyebrow above already says it's the question. */}
+				<div className="mb-3 lh-reading">
 					<ToolContentResponse>{qd.question}</ToolContentResponse>
 				</div>
 				{qd.context && (
@@ -619,10 +622,10 @@ function QuestionDockForm({
 											</span>
 										)}
 									</span>
-									<span>
+									<span className="lh-reading">
 										<ToolContentResponse>{opt.label}</ToolContentResponse>
 										{kind !== "quiz" && opt.description && (
-											// Option subtext renders in Source Sans 3 (owner's mockup);
+											// Option subtext renders in the reading font (owner's mockup);
 											// the "I don't know" copy stays JetBrains Mono. QUIZ options render
 											// NO description (owner ruling 2026-09-26): the model used them to
 											// telegraph correctness — the schema dropped the field and old

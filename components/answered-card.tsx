@@ -86,7 +86,9 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 						<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">incorrect</span>
 					))}
 			</div>
-			<div className="mb-3 font-medium">
+			{/* Regular weight + the reading grey (bold-contrast round,
+			    2026-10-26) — the same paint as the pending dock's question. */}
+			<div className="mb-3 lh-reading">
 				<ToolContentResponse>{answer.questionText}</ToolContentResponse>
 			</div>
 			{parsedDetails && (
@@ -131,7 +133,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 										{(key || sel) && <GlyphMark kind={key ? "check" : "x"} className="size-3.5" />}
 									</span>
 								)}
-								<span className={cn(!sel && "text-muted-foreground")}>
+								<span className={cn(sel ? "lh-reading" : "text-muted-foreground")}>
 									<ToolContentResponse>{opt.label}</ToolContentResponse>
 									{descByIndex.get(opt.index) && (
 										// Ask-option subtext (owner, 2026-10-12): same markdown path

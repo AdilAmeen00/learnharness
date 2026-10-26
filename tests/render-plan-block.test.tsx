@@ -40,13 +40,16 @@ describe("plan block layout (pure)", () => {
 		assert.deepEqual(order.map((n) => n.id), ["a", "b", "c"]);
 		assert.equal(depth.get("c"), 2);
 		const layout = blockLayout(CHAIN.nodes, CHAIN.edges);
-		// Text-first sizing (owner, plan-hug round 2026-10-07): these short
+		// Text-first sizing (owner, plan-hug round 2026-10-07): short
 		// titles hug to the minimum — no more fixed 160px slabs.
 		const W = nodeWidth(wrapTitle("Alpha node"));
-		assert.equal(W, NODE_W_MIN); // est ≈ 50 → floored at the min
-		// All three short titles floor — the extent is the floor itself.
-		assert.equal(nodeWidth(wrapTitle("Gamma node")), NODE_W_MIN); // est ≈ 59.9
-		assert.equal(layout.width, NODE_W_MIN);
+		assert.equal(W, NODE_W_MIN); // est ≈ 59 → floored at the min
+		// "Gamma node" sits just ABOVE the floor in Libron (the 2026-10-26
+		// re-measure: its double m is 10.4px a glyph) — the extent is its
+		// hug, not the floor.
+		const gamma = nodeWidth(wrapTitle("Gamma node"));
+		assert.equal(gamma, 103); // est ≈ 70.3 + 2×16
+		assert.equal(layout.width, gamma);
 		assert.equal(layout.height, 3 * NODE_H + 2 * 48);
 		assert.equal(layout.nodeW.get("a"), W);
 	});
@@ -129,12 +132,14 @@ describe("plan block layout (pure)", () => {
 		// Short titles floor at the min; wide ones size to the widest line.
 		// Per-char-CLASS estimate (owner follow-up: the flat px/char rate
 		// overshot the rendered width — invisible slack beside the text).
-		assert.equal(nodeWidth(["supercalifragilistic"]), 117); // est ≈ 85 + 2×16
-		assert.equal(nodeWidth(wrapTitle("Symmetry and orthogonal complements")), 149);
+		// Rates re-measured for Libron (2026-10-26) — the serif runs ~15%
+		// wider than the Source Sans 3 fit these pins were born with.
+		assert.equal(nodeWidth(["supercalifragilistic"]), 132); // est ≈ 99 + 2×16
+		assert.equal(nodeWidth(wrapTitle("Symmetry and orthogonal complements")), 169);
 		// The hug is symmetric padding — 16 a side, the SAME as the vertical
 		// (44−12)/2 — and never below the floor.
 		assert.ok(nodeWidth(["a"]) === NODE_W_MIN);
-		assert.ok(Math.abs(estimateLineWidth("The normal-form ladder") - 106.3) < 0.5);
+		assert.ok(Math.abs(estimateLineWidth("The normal-form ladder") - 123.9) < 0.5);
 	});
 });
 

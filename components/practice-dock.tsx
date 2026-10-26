@@ -107,7 +107,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 			    (--dock-max-h; the old fixed 40vh cut long problems short). */}
 			<div data-dock-scroll="" className="max-h-[var(--dock-max-h,40vh)] overflow-y-auto px-4 pt-3 pb-2">
 				<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
-				<div className="lh-prose text-[15px]">
+				<div className="lh-prose lh-reading text-[15px]">
 					<ToolContentResponse>{input.statement}</ToolContentResponse>
 				</div>
 			</div>

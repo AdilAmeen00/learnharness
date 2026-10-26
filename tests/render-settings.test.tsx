@@ -239,10 +239,11 @@ describe("AppearanceSection (thin SSR)", () => {
 		assert.ok(html.includes(`placeholder="#141414"`));
 		// The reading font is the searchable dropdown now (font-menu
 		// wave): its trigger shows the factory family; the emphasis
-		// inks' empty state is "same as text" (the old hexes died with
-		// the factory token change).
+		// inks' empty state names the factory (bold white, italic the
+		// surrounding text — bold-contrast round 2026-10-26).
 		assert.ok(html.includes('data-testid="font-trigger"'));
-		assert.equal((html.match(/Empty = same as text/g) ?? []).length, 2);
+		assert.equal((html.match(/Empty = white/g) ?? []).length, 1);
+		assert.equal((html.match(/Empty = same as text/g) ?? []).length, 1);
 		assert.ok(html.includes("16px"));
 	});
 

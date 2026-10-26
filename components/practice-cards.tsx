@@ -65,7 +65,7 @@ export function ProblemCard({ part }: ArtifactPartProps) {
 	return (
 		<div data-testid="problem-card" className="lh-card-enter my-1 rounded-xl border bg-card p-4">
 			<div className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Problem</div>
-			<div className="lh-prose text-[15px]">
+			<div className="lh-prose lh-reading text-[15px]">
 				<ToolContentResponse>{statement}</ToolContentResponse>
 			</div>
 		</div>
@@ -143,7 +143,7 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 					<div className="my-3 border-t" />
 					<div>
 						<div className="mb-0.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Model solution</div>
-						<div className="lh-prose text-[15px]">
+						<div className="lh-prose lh-reading text-[15px]">
 							<ToolContentResponse>{reveal}</ToolContentResponse>
 						</div>
 					</div>

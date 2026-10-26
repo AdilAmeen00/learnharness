@@ -2,9 +2,11 @@
  * The appearance wave's font dropdown (2026-09-26): the pure row-set
  * (fontMenuResults — the DEFAULT row is a fuzzy candidate, so Enter can
  * never pick a row that isn't on screen), the pick composer (null = the
- * factory Source Sans 3), the curated dev-browser fallback roster, the
- * FontMenuList SSR shape, and the emphasis-ink factory ruling (globals.css
- * no longer ships #ee928c/#6fa9d6 — unset inks are the text color).
+ * factory Libron — Source Sans 3 until 2026-10-26), the curated dev-browser
+ * fallback roster, the FontMenuList SSR shape, and the reading-ink factory
+ * ruling (globals.css no longer ships #ee928c/#6fa9d6; since the
+ * bold-contrast round the unset bold ink is WHITE over the softer body
+ * grey, and italic follows the text around it).
  */
 
 import assert from "node:assert/strict";
@@ -26,11 +28,13 @@ describe("fontMenuResults — the DEFAULT row is a candidate, never a ghost pick
 		assert.deepEqual(fontMenuResults("", families), [null, "Arial", "CMU Serif", "Georgia", "Helvetica Neue", "Menlo"]);
 	});
 
-	it("the default row matches its own identity (source/sans/default), not everything", () => {
+	it("the default row matches its own identity (libron/default), not everything", () => {
 		assert.deepEqual(fontMenuResults("georgia", families), ["Georgia"]);
 		assert.deepEqual(fontMenuResults("menlo", families), ["Menlo"]);
 		// the default row is reachable by search…
-		assert.deepEqual(fontMenuResults("source", families)[0], null);
+		assert.deepEqual(fontMenuResults("libron", families)[0], null);
+		// …and the retired factory family no longer summons it
+		assert.ok(!fontMenuResults("source", families).includes(null));
 		assert.ok(fontMenuResults("default", families).includes(null));
 		// …and drops out of unrelated queries
 		assert.ok(!fontMenuResults("georgia", families).includes(null));
@@ -42,7 +46,7 @@ describe("fontMenuResults — the DEFAULT row is a candidate, never a ghost pick
 });
 
 describe("composeFontFamily — null/blank = the factory family, otherwise verbatim", () => {
-	it("null → fontFamily null (Source Sans 3 semantics preserved)", () => {
+	it("null → fontFamily null (the factory-family semantics preserved)", () => {
 		assert.equal(composeFontFamily({ background: "#101010" }, null).fontFamily, null);
 	});
 	it("blank/whitespace → null too", () => {
@@ -121,6 +125,7 @@ describe("the appearance section's font control (thin SSR)", () => {
 		// the old CommitInput is retired
 		assert.ok(!html.includes('data-testid="input-font"'));
 		assert.ok(!html.includes('placeholder="Source Sans 3"'));
+		assert.ok(!html.includes("Source Sans 3"), "the retired factory family is gone from the section");
 	});
 
 	it("a stored family shows in the trigger (the record never lies)", () => {
@@ -131,26 +136,73 @@ describe("the appearance section's font control (thin SSR)", () => {
 	});
 });
 
-describe("the emphasis-ink factory ruling (globals.css)", () => {
+describe("the reading-ink factory ruling (globals.css, bold-contrast round 2026-10-26)", () => {
 	it("the old emphasis hexes are GONE from the ink token declarations", () => {
 		const css = fs.readFileSync("app/globals.css", "utf-8");
 		assert.ok(!css.includes("--lh-ink-strong: #ee928c"), "bold factory is not the old orange");
 		assert.ok(!css.includes("--lh-ink-italic: #6fa9d6"), "italic factory is not the old blue");
 	});
 
-	it("both blocks default the inks to the regular text color", () => {
+	it("both blocks: body grey, bold WHITE, italic follows the surrounding text", () => {
 		const css = fs.readFileSync("app/globals.css", "utf-8");
-		assert.equal((css.match(/--lh-ink-strong: var\(--foreground\)/g) ?? []).length, 2, "both theme blocks");
-		assert.equal((css.match(/--lh-ink-italic: var\(--foreground\)/g) ?? []).length, 2, "both theme blocks");
+		assert.equal((css.match(/--lh-ink-body: #b4b4b4;/g) ?? []).length, 2, "both theme blocks");
+		assert.equal((css.match(/--lh-ink-strong: #ffffff;/g) ?? []).length, 2, "both theme blocks");
+		assert.equal((css.match(/--lh-ink-italic: currentColor;/g) ?? []).length, 2, "both theme blocks");
+		assert.ok(!css.includes("--lh-ink-strong: var(--foreground)"), "the same-as-text ruling is superseded");
 	});
 
-	it("the appearance rows' empty-state labels say 'same as text'", () => {
+	it("the reading surfaces take the body grey through .lh-reading, never through .lh-prose itself", () => {
+		const css = fs.readFileSync("app/globals.css", "utf-8");
+		assert.match(css, /\.lh-reading \{\s*color: var\(--lh-ink-body\);\s*\}/, "the container rule");
+		const prose = /\.lh-prose \{([^}]*)\}/.exec(css)?.[1] ?? "";
+		assert.ok(!/\bcolor:/.test(prose), ".lh-prose sets no color — muted surfaces keep their own grey");
+	});
+
+	it("markdown headings take the bold ink (a heading never dims below the bold under it)", () => {
+		const css = fs.readFileSync("app/globals.css", "utf-8");
+		const headings = /\.lh-prose :where\(h1, h2, h3, h4, h5, h6\) \{([^}]*)\}/.exec(css)?.[1] ?? "";
+		assert.ok(headings.includes("color: var(--lh-ink-strong)"), headings);
+	});
+
+	it("the appearance rows' empty-state labels: bold 'white', italic 'same as text'", () => {
 		const html = renderToStaticMarkup(
 			<AppearanceSection appearance={undefined} onSectionChange={() => {}} />,
 		);
-		assert.equal((html.match(/Empty = same as text/g) ?? []).length, 2, "bold + italic rows");
+		assert.equal((html.match(/Empty = white/g) ?? []).length, 1, "the bold row");
+		assert.equal((html.match(/Empty = same as text/g) ?? []).length, 1, "the italic row");
 		assert.ok(!html.includes("#ee928c"));
 		assert.ok(!html.includes("#6fa9d6"));
+	});
+});
+
+describe("Libron — the bundled reading font (owner ruling 2026-10-26)", () => {
+	const css = fs.readFileSync("app/globals.css", "utf-8");
+
+	it("ships four static faces from public/fonts/libron, OFL alongside", () => {
+		for (const face of ["Regular", "Italic", "Bold", "BoldItalic"]) {
+			assert.ok(fs.existsSync(`public/fonts/libron/Libron-${face}.woff2`), `Libron-${face}.woff2 is bundled`);
+			assert.ok(css.includes(`url("/fonts/libron/Libron-${face}.woff2") format("woff2")`), `@font-face for ${face}`);
+		}
+		assert.ok(fs.existsSync("public/fonts/libron/OFL.txt"), "the license rides with the files");
+		assert.equal((css.match(/font-family: "Libron";/g) ?? []).length, 4, "one @font-face per face");
+	});
+
+	it("the prose token reads Libron; Source Sans 3 and its next/font variable are retired", () => {
+		assert.match(css, /--font-prose: "Libron", Georgia, "Times New Roman", serif;/);
+		assert.match(css, /--font-sans: "Libron", Georgia, "Times New Roman", serif;/, "the Tailwind alias follows");
+		assert.ok(!css.includes("--font-sans3"), "no Source Sans 3 variable anywhere in the stylesheet");
+		const layout = fs.readFileSync("app/layout.tsx", "utf-8");
+		assert.ok(!layout.includes("Source_Sans_3"), "the Google Fonts download is gone");
+	});
+
+	it("titles follow the reading font by default; CMU Serif stays bundled as the opt-in", () => {
+		assert.match(css, /--font-title: var\(--font-prose\);/);
+		assert.ok(css.includes('font-family: "lh-cmu";'), "the CMU face is still declared");
+		assert.ok(fs.existsSync("public/fonts/cmunbx.ttf"));
+	});
+
+	it("the factory reading family is Libron", () => {
+		assert.equal(DEFAULT_READING_FONT, "Libron");
 	});
 });
 
@@ -164,8 +216,8 @@ describe("customFamilyFor — the single-field custom escape (2026-09-26)", () =
 
 	it("a matching family is the better pick — no action row", () => {
 		assert.equal(customFamilyFor("georgia", families), null);
-		// the default row matches too — "source"/"sans"/"default" queries pick it
-		assert.equal(customFamilyFor("source", families), null);
+		// the default row matches too — "libron"/"default" queries pick it
+		assert.equal(customFamilyFor("libron", families), null);
 	});
 
 	it("an empty query is never a custom pick", () => {

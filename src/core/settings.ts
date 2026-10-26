@@ -282,13 +282,15 @@ export interface AppearanceSettings {
 	/** The one user-chosen color; everything else derives per-mode in code.
 	 *  null = the mode's default background. */
 	background?: string | null;
-	/** The main reading font (everything that is Source Sans 3 today), by
-	 *  name — user-chosen from installed fonts. null = Source Sans 3. */
+	/** The main reading font (everything that is Libron today), by name —
+	 *  user-chosen from installed fonts. null = Libron (the bundled
+	 *  factory face; Source Sans 3 before 2026-10-26). */
 	fontFamily?: string | null;
 	/** Reading font size in px (12–24, default 16). Headings render as
 	 *  multiples of this, so one knob scales the document coherently. */
 	proseFontSize?: number;
-	/** Session names in CMU Serif (default true — today's look). */
+	/** Session names in CMU Serif (default false since 2026-10-26: titles
+	 *  follow the reading font; on = the CMU Serif opt-in). */
 	sessionNameSerif?: boolean;
 	mdRendering?: MdRenderingSettings;
 }
@@ -400,9 +402,10 @@ export const FACTORY_SETTINGS: FactorySettings = {
 	appearance: {
 		mode: "dark",
 		background: null, // the dark default (#141414) lives in the mode's derivation curve
-		fontFamily: null, // Source Sans 3
+		fontFamily: null, // Libron (the bundled reading font, 2026-10-26)
 		proseFontSize: 16,
-		sessionNameSerif: true,
+		sessionNameSerif: false, // titles follow the reading font; CMU Serif is the opt-in
+
 		mdRendering: { headingWeight: 900, boldColor: null, italicColor: null },
 	},
 	graph: { enabled: true, rendering: true, extractionChunkTokens: 4096 },

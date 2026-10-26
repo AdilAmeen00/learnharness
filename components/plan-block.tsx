@@ -62,13 +62,16 @@ export const PAD_X = 16;
 export const NODE_W_MIN = 96;
 export const NODE_H = 44;
 
-// Width classes for the PROSE font (Source Sans 3 as shipped, text-xs
-// rendering at 11px): narrow stems and punctuation, wide m/w, caps +
-// digits, everything else. Rates least-squares-fitted against
-// getComputedTextLength() measurements of the live plan titles
-// (2026-10-07 smoke) — residuals land within ±4px per LINE, so
-// per-side padding reads as PAD_X ±2. A different reading font
-// (Appearance override) drifts the estimate slightly; accepted.
+// Width classes for the PROSE font (Libron as shipped since 2026-10-26,
+// text-xs rendering at 11px): narrow stems and punctuation, wide m/w,
+// caps + digits, everything else. The classes are the 2026-10-07 fit
+// (Source Sans 3: 3.1 / 9.2 / 6.0 / 5.4, residuals ±4px per LINE); the
+// rates were re-measured for Libron — each is the mean canvas
+// measureText width of its class's glyphs at 11px (the serif runs ~15%
+// wider), checked against eight plan-sized titles: residuals within
+// ±6px per line, so per-side padding reads as PAD_X ±3. A different
+// reading font (Appearance override) drifts the estimate further;
+// accepted.
 const NARROW_CHARS = new Set(" ijltfr.,:;'!|()[]-\\");
 const WIDE_CHARS = new Set("mwMW@");
 const CAP_DIGIT = /[A-Z0-9]/;
@@ -77,10 +80,10 @@ const CAP_DIGIT = /[A-Z0-9]/;
 export function estimateLineWidth(line: string): number {
 	let w = 0;
 	for (const ch of line) {
-		if (NARROW_CHARS.has(ch)) w += 3.1;
-		else if (WIDE_CHARS.has(ch)) w += 9.2;
-		else if (CAP_DIGIT.test(ch)) w += 6.0;
-		else w += 5.4;
+		if (NARROW_CHARS.has(ch)) w += 3.5;
+		else if (WIDE_CHARS.has(ch)) w += 10.4;
+		else if (CAP_DIGIT.test(ch)) w += 7.6;
+		else w += 6.4;
 	}
 	return w;
 }

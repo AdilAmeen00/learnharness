@@ -472,4 +472,28 @@ describe("tool descriptions carry mechanics only, no question-craft", () => {
 		assert.ok(shared.includes("asymmetry"), "the option craft moved here, not deleted");
 		assert.ok(shared.includes("TRANSCRIBED SPEECH"), "the dictation-leniency note lives here");
 	});
+	it("the bold rules (owner ruling 2026-10-26): options never bold, question text bolds only the setup", async () => {
+		const shared = await fs.promises.readFile(
+			path.join(PATHS.root, "src/agent/prompts/shared/20-question-tools.md"),
+			"utf-8",
+		);
+		assert.ok(shared.includes("no bold in any option"), "rule (4) forbids bold in options outright");
+		assert.ok(!shared.includes("no asymmetric bolding"), "the old even-bolding allowance is gone");
+		assert.ok(shared.includes("**Bold in the question text**"), "the question-text bold rule");
+		assert.ok(shared.includes("Never bold a phrase that points toward the answer"));
+
+		const formatting = await fs.promises.readFile(
+			path.join(PATHS.root, "src/agent/prompts/shared/40-formatting.md"),
+			"utf-8",
+		);
+		assert.ok(formatting.includes("- Bold: use bold to emphasize the main ideas"), "the inline-bold rule, in every agent");
+		assert.ok(formatting.includes("the block-level emphasis device"), "the callout is the block device now");
+		assert.ok(!formatting.includes("the one emphasis device"), "the callout no longer claims to be the only one");
+
+		const practice = await fs.promises.readFile(
+			path.join(PATHS.root, "src/agent/prompts/practice/00-base.md"),
+			"utf-8",
+		);
+		assert.ok(practice.includes("the statement carries NO bold"), "problem statements stay unbolded");
+	});
 });

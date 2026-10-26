@@ -28,7 +28,8 @@
 }
 
 /* Palette (owner's hexes): main #141414, raised #1C1C1C, edges #434343.
-   Mono chrome = JetBrains Mono; prose = Source Sans 3; titles = CMU Serif. */
+   Mono chrome = JetBrains Mono; reading prose + titles = Libron (bundled,
+   owner ruling 2026-10-26); CMU Serif is the opt-in title face. */
 :root {
 	color-scheme: dark;
 	--radius: 8px;
@@ -50,12 +51,17 @@
 	--border: #434343;
 	--input: #434343;
 	--ring: #8d8d8d;
-	/* Emphasis inks default to the REGULAR TEXT COLOR (owner ruling,
-	   appearance wave 2026-09-26 — the old #ee928c/#6fa9d6 factory
-	   emphasis colors are gone). Explicit overrides land via the
-	   appearance settings vars. */
-	--lh-ink-strong: var(--foreground);
-	--lh-ink-italic: var(--foreground);
+	/* The reading inks (owner ruling, bold-contrast round 2026-10-26):
+	   agent-authored reading text sits at a softer grey (--lh-ink-body,
+	   applied by .lh-reading) so that BOLD — pure white — carries real
+	   contrast and scans; italic takes whatever color surrounds it (a
+	   brighter italic would read as a second, unintended emphasis). The
+	   same-as-text ruling of 2026-09-26 is superseded; the old
+	   #ee928c/#6fa9d6 factory colors stay gone. Explicit overrides land
+	   via the appearance settings vars. */
+	--lh-ink-body: #b4b4b4;
+	--lh-ink-strong: #ffffff;
+	--lh-ink-italic: currentColor;
 	/* THE READING SIZE = the ladder's 16px rung (--text-lg). Can't be
 	   var()-linked: @theme inline inlines literals into utilities without
 	   emitting runtime vars — so this is the one documented duplication:
@@ -88,9 +94,10 @@
 	--border: #434343;
 	--input: #434343;
 	--ring: #8d8d8d;
-	/* Same emphasis ruling as the block above: unset = text color. */
-	--lh-ink-strong: var(--foreground);
-	--lh-ink-italic: var(--foreground);
+	/* Same reading-ink ruling as the block above. */
+	--lh-ink-body: #b4b4b4;
+	--lh-ink-strong: #ffffff;
+	--lh-ink-italic: currentColor;
 	/* THE READING SIZE = the ladder's 16px rung (--text-lg). Can't be
 	   var()-linked: @theme inline inlines literals into utilities without
 	   emitting runtime vars — so this is the one documented duplication:
@@ -102,7 +109,8 @@
 	--lh-heading-weight: 900;
 }
 
-/* CMU Serif bold (titles) — bundled local file, no CDN dependency. */
+/* CMU Serif bold (the opt-in title face) — bundled local file, no CDN
+   dependency. */
 @font-face {
 	font-family: "lh-cmu";
 	src: url("/fonts/cmunbx.ttf") format("truetype");
@@ -111,17 +119,52 @@
 	font-display: swap;
 }
 
+/* Libron — THE reading font (owner ruling 2026-10-26; replaces Source
+   Sans 3): a Newsreader-derived serif cut for screen reading, SIL OFL
+   (public/fonts/libron/OFL.txt). Four static faces — no variable axis,
+   so weights snap to 400/700. Bundled like CMU: no network at build or
+   run time. */
+@font-face {
+	font-family: "Libron";
+	src: url("/fonts/libron/Libron-Regular.woff2") format("woff2");
+	font-weight: 400;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Libron";
+	src: url("/fonts/libron/Libron-Italic.woff2") format("woff2");
+	font-weight: 400;
+	font-style: italic;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Libron";
+	src: url("/fonts/libron/Libron-Bold.woff2") format("woff2");
+	font-weight: 700;
+	font-style: normal;
+	font-display: swap;
+}
+@font-face {
+	font-family: "Libron";
+	src: url("/fonts/libron/Libron-BoldItalic.woff2") format("woff2");
+	font-weight: 700;
+	font-style: italic;
+	font-display: swap;
+}
+
 @theme inline {
-	/* Fonts: chrome = JetBrains Mono, prose = Source Sans 3, titles = CMU
-	   Serif bold. The JetBrains/SourceSans variables attach in app/layout.tsx.
-	   (owner, typography round) The Tailwind defaults are ALIASED to the app
-	   fonts: `font-mono`/`font-sans` utilities would otherwise fall to the
-	   SYSTEM stacks — a fourth font the app never chose — and streamdown's
-	   code-block chrome + mermaid-error + demo-card all use them. */
+	/* Fonts: chrome = JetBrains Mono, prose + titles = Libron (the bundled
+	   @font-face above), CMU Serif bold the opt-in title face. The JetBrains
+	   variable attaches in app/layout.tsx. (owner, typography round) The
+	   Tailwind defaults are ALIASED to the app fonts: `font-mono`/`font-sans`
+	   utilities would otherwise fall to the SYSTEM stacks — a font the app
+	   never chose — and streamdown's code-block chrome + mermaid-error +
+	   demo-card all use them. */
 	--font-ui: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
-	--font-prose: var(--font-sans3), ui-sans-serif, system-ui, sans-serif;
+	--font-prose: "Libron", Georgia, "Times New Roman", serif;
 	--font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, monospace;
-	--font-sans: var(--font-sans3), ui-sans-serif, system-ui, sans-serif;
+	--font-sans: "Libron", Georgia, "Times New Roman", serif;
 	/* The modular type ladder — each size carries its own line-height.
 	   Component sizes must pull from this ladder. (owner, typography
 	   round 4: the 10px rung is merged into 11 — one pixel apart was a
@@ -186,20 +229,31 @@ body {
 }
 
 /* Teaching prose (the markdown renderer's container gets .lh-prose):
-   Source Sans 3 with the size/leading tokens; emphasis color bound to
-   the settings-ready tokens. */
+   Libron with the size/leading tokens; emphasis color bound to the
+   settings-ready tokens. */
 .lh-prose {
 	font-family: var(--font-prose);
 	font-size: var(--lh-prose-size);
 	line-height: var(--lh-prose-leading);
 }
 
-/* Session-name weight (owner, fix wave round 3): with the serif toggle
-   OFF, --font-title resolves to the prose font — Source Sans 3 is loaded
-   as a VARIABLE font, and without an explicit weight the titles render at
-   400, a whisper next to CMU's bold-only face. Request 900: the variable
-   font takes it, and CMU (a single 700 face) snaps to its nearest
-   available weight — the same rendering it already had. */
+/* The reading surfaces (owner ruling, bold-contrast round 2026-10-26):
+   agent-authored text the learner READS — messages, question text,
+   options, problem statements, model solutions, briefs — sits at the
+   softer body grey so white bold scans. Applied to the CONTAINER, never
+   to .lh-prose itself: a muted surface (context lines, option subtext,
+   verdicts, "Why") keeps its own grey, and the learner's own words stay
+   at full foreground. Unlayered, specificity (0,1,0): a utility on the
+   same element still loses, so put it on the wrapper. */
+.lh-reading {
+	color: var(--lh-ink-body);
+}
+
+/* Session-name weight (owner, fix wave round 3): --font-title resolves
+   to the prose font by default, and without an explicit weight the titles
+   would render at 400, a whisper next to CMU's bold-only face. Request
+   900: Libron (static 400/700 faces) and CMU (a single 700 face) both
+   snap to their bold; a variable override font takes the 900 itself. */
 .font-title {
 	font-weight: 900;
 }
@@ -223,14 +277,18 @@ body {
 	padding-left: 1.5rem;
 }
 
-/* Markdown headings render at the font's BLACK weight (owner ask,
-   2026-09-19) — 900, not streamdown's font-semibold 600. The variable
-   Source Sans 3 axis spans 200–900 (next/font loads the full range), so
-   900 draws the real Black cut. Unlayered CSS beats the utility layer;
-   :where keeps specificity zero. Chrome titles (CMU Serif) don't live
-   under .lh-prose and stay untouched. */
+/* Markdown headings render at the heaviest weight (owner ask,
+   2026-09-19) — 900, not streamdown's font-semibold 600. Libron ships
+   static 400/700 faces, so anything from 600 up snaps to its Bold; a
+   variable override font draws the requested cut. Headings take the
+   bold ink too (bold-contrast round 2026-10-26): emphasis is white, and
+   a heading that dimmed with the body would read as less than the bold
+   phrases under it. Unlayered CSS beats the utility layer; :where keeps
+   specificity zero. Chrome titles don't live under .lh-prose and stay
+   untouched. */
 .lh-prose :where(h1, h2, h3, h4, h5, h6) {
 	font-weight: var(--lh-heading-weight, 900);
+	color: var(--lh-ink-strong);
 }
 
 /* lh-input (owner, typography round 2): lh-prose's 1.5 READING leading
@@ -558,9 +616,12 @@ body {
 
 /* --font-title deliberately NOT @theme inline (see comment above): the
    session-name-serif toggle overrides this var at runtime, so the
-   .font-title utility must read it through var(), not carry a baked copy. */
+   .font-title utility must read it through var(), not carry a baked copy.
+   Factory = the reading font (Libron, owner ruling 2026-10-26 — a
+   Reading-font override carries into the titles); the toggle ON sets
+   "lh-cmu" at runtime (components/settings/appearance.tsx). */
 @theme {
-	--font-title: "lh-cmu", serif;
+	--font-title: var(--font-prose);
 }
 
 /* Card enter (owner round, 2026-10-05): the transcript cards' one-shot

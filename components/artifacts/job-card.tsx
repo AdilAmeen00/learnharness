@@ -55,7 +55,7 @@ export function PdfBriefCard({ output }: { output: unknown }) {
 				PDF brief
 				{failed && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">failed</span>}
 			</div>
-			<div className="text-sm [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+			<div className="lh-reading text-sm [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
 				<MessageResponse>{result.brief}</MessageResponse>
 			</div>
 			{!failed && readList.length > 0 && (
@@ -92,7 +92,7 @@ export function ResearchBriefCard({ output }: { output: unknown }) {
 				Research brief
 				{failed && <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">failed</span>}
 			</div>
-			<div className="text-sm [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
+			<div className="lh-reading text-sm [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
 				<MessageResponse>{result.brief}</MessageResponse>
 			</div>
 			{result.sources.length > 0 && (

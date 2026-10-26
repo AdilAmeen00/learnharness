@@ -29,9 +29,9 @@ describe("FACTORY_SETTINGS (the compiled factory layer)", () => {
 		const a = FACTORY_SETTINGS.appearance;
 		assert.equal(a.mode, "dark");
 		assert.equal(a.background, null); // the mode's own default, not a factory hex
-		assert.equal(a.fontFamily, null); // Source Sans 3
+		assert.equal(a.fontFamily, null); // Libron (bundled)
 		assert.equal(a.proseFontSize, 16);
-		assert.equal(a.sessionNameSerif, true);
+		assert.equal(a.sessionNameSerif, false); // titles follow the reading font; CMU is the opt-in
 		assert.equal(a.mdRendering.headingWeight, 900);
 		assert.equal(a.mdRendering.boldColor, null); // white
 		assert.equal(a.mdRendering.italicColor, null);
@@ -149,7 +149,7 @@ describe("sanitizeUserSettings", () => {
 		assert.equal(out.appearance?.mdRendering?.italicColor, null);
 	});
 
-	it("empty strings/whitespace fontFamily → null (Source Sans 3); wrong-type → null too (the default)", () => {
+	it("empty strings/whitespace fontFamily → null (the factory family); wrong-type → null too (the default)", () => {
 		for (const bad of ["", "   ", 12, { name: "x" }]) {
 			const out = sanitizeUserSettings({ appearance: { fontFamily: bad } });
 			assert.ok(out);

@@ -23,11 +23,12 @@
  * it). In a plain dev browser the API is absent → a small curated list
  * + a footer that says exactly that — never a fabricated system list.
  * The custom-family input inside the menu is the manual escape path.
- * Empty/unset keeps meaning Source Sans 3.
+ * Empty/unset keeps meaning Libron (the bundled reading font, owner
+ * ruling 2026-10-26 — Source Sans 3 before that).
  *
- * Emphasis inks (same wave): the factory tokens default to the regular
- * text color now (globals.css); the rows' empty-state labels say "same
- * as text".
+ * Emphasis inks (bold-contrast round, 2026-10-26): the factory bold ink
+ * is white over the softer reading grey (globals.css); italic takes the
+ * surrounding color. The rows' empty-state labels say so.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -45,7 +46,7 @@ import { CommitInput, SettingsRow, ThinSelect, Toggle } from "./controls.tsx";
 
 /** The factory reading family — the DEFAULT row's identity (unset =
  *  this). Exported for tests. */
-export const DEFAULT_READING_FONT = "Source Sans 3";
+export const DEFAULT_READING_FONT = "Libron";
 
 /** The dev-browser fallback list (queryLocalFonts is absent there):
  *  the app's own knowns plus a handful of ubiquitous macOS families,
@@ -78,7 +79,7 @@ function localFontsApi(): LocalFontsApi | null {
 }
 
 /** Compose the reading-font pick: null (or blank) = the factory
- *  Source Sans 3; otherwise the family verbatim (trimmed — the
+ *  Libron; otherwise the family verbatim (trimmed — the
  *  sanitizer trims again server-side). Pure — exported for tests. */
 export function composeFontFamily(
 	appearance: AppearanceSettings | undefined,
@@ -288,9 +289,12 @@ export function AppearanceSection({
 					}}
 				/>
 			</SettingsRow>
-			<SettingsRow label="Session names in serif" testid="row-session-serif">
+			{/* CMU Serif is the OPT-IN title face now (owner ruling 2026-10-26):
+			    off = titles follow the reading font (Libron, itself a serif —
+			    hence the label names the face, not the category). */}
+			<SettingsRow label="Session names in CMU Serif" testid="row-session-serif">
 				<Toggle
-					checked={appearance?.sessionNameSerif ?? true}
+					checked={appearance?.sessionNameSerif ?? false}
 					label="session names serif"
 					onChange={(on) => onSectionChange({ ...appearance, sessionNameSerif: on })}
 				/>
@@ -318,10 +322,11 @@ export function AppearanceSection({
 					}}
 				/>
 			</SettingsRow>
-			{/* The emphasis inks default to the REGULAR TEXT COLOR now
-			    (appearance wave, 2026-09-26) — the empty-state labels say
-			    so; explicit hex overrides ride unchanged. */}
-			<SettingsRow label="Bold color" hint="Empty = same as text" testid="row-bold-color">
+			{/* The factory bold ink is WHITE over the softer reading grey
+			    (bold-contrast round, 2026-10-26); italic follows the text
+			    around it. The empty-state labels say so; explicit hex
+			    overrides ride unchanged. */}
+			<SettingsRow label="Bold color" hint="Empty = white" testid="row-bold-color">
 				<CommitInput
 					value={md?.boldColor ?? ""}
 					placeholder="same as text"
