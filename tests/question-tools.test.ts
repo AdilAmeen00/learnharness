@@ -480,7 +480,8 @@ describe("tool descriptions carry mechanics only, no question-craft", () => {
 		assert.ok(shared.includes("no bold in any option"), "rule (4) forbids bold in options outright");
 		assert.ok(!shared.includes("no asymmetric bolding"), "the old even-bolding allowance is gone");
 		assert.ok(shared.includes("**Bold in the question text**"), "the question-text bold rule");
-		assert.ok(shared.includes("Never bold a phrase that points toward the answer"));
+		assert.ok(shared.includes("EVERY question carries at least one bold anchor"), "one anchor minimum (owner, 2026-10-26 follow-up)");
+		assert.ok(shared.includes("never a phrase that points toward the answer"));
 
 		const formatting = await fs.promises.readFile(
 			path.join(PATHS.root, "src/agent/prompts/shared/40-formatting.md"),
