@@ -59,6 +59,7 @@ import {
 } from "../core/input-events.ts";
 import { steerDelivered } from "../core/contracts.ts";
 import type {CallUsage} from "../core/contracts.ts";
+import { RepoPathError, resolveRepo } from "./repos.ts";
 
 /**
  * One chat turn over the server-owned native record. Framework-free (plain
@@ -167,6 +168,16 @@ export async function handleChatRequest(
 			return Response.json({ error: err.message }, { status: 400 });
 		}
 		throw err;
+	}
+	// A repo attached mid-session (Open repo): the parser checked shape;
+	// the server's own resolution is what the marker records.
+	if (input.type === "text" && input.repo) {
+		try {
+			input = { ...input, repo: resolveRepo(input.repo.path) };
+		} catch (err) {
+			if (err instanceof RepoPathError) return Response.json({ error: err.message }, { status: 400 });
+			throw err;
+		}
 	}
 	return handleChatInput(chatId, input, buildAgent);
 }

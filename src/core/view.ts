@@ -381,6 +381,16 @@ function projectMarker(marker: LhMarkerMessage, out: LhViewMessage[]): void {
 			});
 			return;
 		}
+		case "repo-context": {
+			// The attached repo (Open repo): user-side scaffolding like the
+			// graph-context card — a one-line card where it was attached.
+			out.push({
+				id: marker.id,
+				role: "user",
+				parts: [{ type: "data-repo-context", id: `rc_${marker.id}`, data: marker.details }],
+			});
+			return;
+		}
 		case "probe-handoff": {
 			out.push({
 				id: marker.id,

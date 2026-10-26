@@ -23,6 +23,7 @@ import {
 	newAnswerResult,
 	newNextMessage,
 	newProblemDismissedMarker,
+	newRepoContextMessage,
 	newThinkingMessage,
 	newUserMessage,
 	projectView,
@@ -677,7 +678,11 @@ export class SessionModel {
 		// write-ahead will persist (inputAppends), with LOCAL ids so
 		// adoption can tell them from the record's absorbed copies.
 		const optimistic: LhMessage[] = [];
-		if (input.type === "text") optimistic.push({ ...newUserMessage(input.text), id: localId() });
+		if (input.type === "text") {
+			// An attached repo's marker lands first (inputAppends' order).
+			if (input.repo) optimistic.push({ ...newRepoContextMessage(input.repo), id: localId() });
+			optimistic.push({ ...newUserMessage(input.text), id: localId() });
+		}
 		else if (input.type === "thinking") {
 			// The practice submissions (2026-10-04): the marker lands
 			// optimistically — the card renders from its details the

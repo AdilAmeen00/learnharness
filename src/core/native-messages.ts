@@ -67,6 +67,7 @@ export interface LhMarkerMessage {
 	role: "custom";
 	customType:
 		| "graph-context"
+		| "repo-context"
 		| "probe-handoff"
 		| "subagent-steer"
 		| "subagent-abort"
@@ -282,6 +283,38 @@ export function newGraphContextMessage(picks: readonly GraphContextPick[], chain
 		content: lines.join("\n"),
 		display: true,
 		details: { propositions: picks, chains },
+		timestamp: Date.now(),
+	};
+}
+
+/** A code repository the learner attached to a teach session (the Open
+ *  repo button): the absolute path the server resolved, plus a display
+ *  name (the folder's basename). */
+export interface RepoRef {
+	path: string;
+	name: string;
+}
+
+/** The session's repo context: rides the session's creation (message[0],
+ *  after any graph-context marker) or the learner's next text message
+ *  mid-session (just before it). A pointer, not file contents — the agent
+ *  reads the code itself with the read-only ls/find/grep/read tools, the
+ *  learner-files law (nothing auto-injects). A later marker supersedes an
+ *  earlier one. Same bracket preamble as the graph-context marker: it
+ *  flattens to a user-role message, so it must read as injected context. */
+export function newRepoContextMessage(repo: RepoRef): LhMarkerMessage {
+	const lines = [
+		`[Session context] — the learner attached a code repository to study: ${repo.name} at ${repo.path}`,
+		"",
+		"Treat it as the primary source for this session: explore it with ls, find, grep, and read (absolute paths under that directory), and ground explanations in its actual code, citing file paths. If an earlier repository was attached in this session, this one replaces it.",
+	];
+	return {
+		id: newMessageId(),
+		role: "custom",
+		customType: "repo-context",
+		content: lines.join("\n"),
+		display: true,
+		details: { path: repo.path, name: repo.name },
 		timestamp: Date.now(),
 	};
 }
@@ -733,7 +766,7 @@ export function nativeInputCause(message: AgentMessage, history: readonly AgentM
 	if (message.role === "custom") {
 		if (["probe-handoff", "subagent-steer", "subagent-abort"].includes(message.customType)) return "automatic";
 		if (["practice-thinking", "practice-next"].includes(message.customType)) return "learner";
-		return ["graph-context", "plan-block", "problem-dismissed", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
+		return ["graph-context", "repo-context", "plan-block", "problem-dismissed", "compaction"].includes(message.customType) ? "neutral" : "unrecognizable";
 	}
 	if (message.role === "toolResult") {
 		if (!(QUESTION_TOOLS as readonly string[]).includes(message.toolName) || message.isError || message.details == null || (message.details as { dismissed?: boolean }).dismissed) return "neutral";

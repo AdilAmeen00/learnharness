@@ -12,7 +12,8 @@ import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-
 import { StatsBar } from "@/components/stats-bar";
 import { ChainTableOverlay } from "@/components/chain-table.tsx";
 import { ComposerActions, NodePickerControl } from "@/components/composer-actions";
-import type { ChatSettings, GraphSnapshot } from "@/src/core";
+import { RepoPickerControl } from "@/components/repo-picker";
+import type { ChatSettings, GraphSnapshot, RepoRef } from "@/src/core";
 
 /** The draft's pick set (owner round 10): the SAME shape the home pick
  *  bar lifts — resolved nodes as the learner SAW them at pick time. */
@@ -45,6 +46,7 @@ export async function startDraftSession(
 	fetchLike: typeof fetch,
 	mode?: "practice",
 	picks?: readonly DraftPick[],
+	repo?: RepoRef | null,
 ): Promise<string | null> {
 	const t = text.trim();
 	if (!t) return null;
@@ -58,10 +60,13 @@ export async function startDraftSession(
 		body: JSON.stringify(
 			mode === "practice"
 				? { title: t, kind: "practice", ...(picks && picks.length > 0 ? { graphContext: { propositions: picks } } : {}) }
-				: { title: t },
+				: // The attached repo (Open repo, teach only) rides the
+					// creation: the server writes its marker before turn 1.
+					{ title: t, ...(repo ? { repo: repo.path } : {}) },
 		),
 	});
-	const { id } = (await res.json()) as { id: string };
+	const { id, error } = (await res.json()) as { id: string; error?: string };
+	if (!res.ok) throw new Error(error ?? `Could not start the session (${res.status})`);
 	// No settings PUT on create (per-session models, owner 2026-09-28):
 	// the SERVER stamps the newborn from the strong slot.
 	return `/chat/${id}?prompt=${encodeURIComponent(t)}`;
@@ -82,6 +87,10 @@ export function DraftShell({
 	picks = [],
 	onOpenPicker,
 	onClearPicks,
+	repo = null,
+	onPickRepo,
+	onClearRepo,
+	repoError,
 	overlay,
 }: {
 	busy: boolean;
@@ -104,6 +113,11 @@ export function DraftShell({
 	picks?: DraftPick[];
 	onOpenPicker?: () => void;
 	onClearPicks?: () => void;
+	/** Open repo (teach drafts): the pending repo the creation carries. */
+	repo?: RepoRef | null;
+	onPickRepo?: (repo: RepoRef) => void;
+	onClearRepo?: () => void;
+	repoError?: string | null;
 	/** THE PICKER SLOT (owner round 10b): the chain-table overlay hosts
 	 *  INSIDE the content column's relative container — the same law as
 	 *  the graph view (the overlay fills its column, never the sidebar).
@@ -188,6 +202,9 @@ export function DraftShell({
 									picker={(picks.length > 0 || mode === "practice") && (
 										<NodePickerControl count={picks.length} onOpen={onOpenPicker} onClear={onClearPicks} />
 									)}
+									repo={mode === "teach" && onPickRepo && onClearRepo && (
+										<RepoPickerControl repo={repo} onPick={onPickRepo} onClear={onClearRepo} error={repoError} />
+									)}
 									setup={setupCta}
 								/>
 								<div className="pointer-events-auto overflow-hidden rounded-2xl border bg-card shadow-lg">
@@ -253,6 +270,16 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 		setPicks(next);
 	};
 	const [pickerOpen, setPickerOpen] = useState(false);
+	// Open repo (teach drafts): mirrored to a ref for the same reason as
+	// the text — the send reads it after the dictation flush.
+	const [repo, setRepo] = useState<RepoRef | null>(null);
+	const repoRef = useRef<RepoRef | null>(null);
+	const [repoError, setRepoError] = useState<string | null>(null);
+	const applyRepo = (next: RepoRef | null) => {
+		repoRef.current = next;
+		setRepo(next);
+		setRepoError(null);
+	};
 	const [snapshot, setSnapshot] = useState<GraphSnapshot | null>(null);
 	const openPicker = () => {
 		if (snapshot) {
@@ -302,12 +329,23 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 			return;
 		}
 		setBusy(true);
-		void startDraftSession(draft, fetch, mode === "practice" ? "practice" : undefined, mode === "practice" ? picksRef.current : undefined)
+		void startDraftSession(
+			draft,
+			fetch,
+			mode === "practice" ? "practice" : undefined,
+			mode === "practice" ? picksRef.current : undefined,
+			mode === "practice" ? undefined : repoRef.current,
+		)
 			.then((target) => {
 				if (target) router.push(target);
 				else setBusy(false);
 			})
-			.catch(() => setBusy(false));
+			.catch((err: Error) => {
+				setBusy(false);
+				// A refused repo (the folder moved since it was picked) shows
+				// on the pill; the draft stays put either way.
+				if (repoRef.current) setRepoError(err.message);
+			});
 	}, [busy, router, configured, zeroKeys, strongKeyless]);
 
 	return (
@@ -321,6 +359,9 @@ export function NewSession({ initialConfigured, mode = "teach" }: { initialConfi
 				picks={picks}
 				onOpenPicker={openPicker}
 				onClearPicks={() => applyPicks([])}
+				repo={repo}
+				onPickRepo={applyRepo}
+				onClearRepo={() => applyRepo(null)}
 				overlay={
 					// THE PICKER (owner round 10b): hosted INSIDE the content
 					// column — absolute inset-0 resolves to the column's relative

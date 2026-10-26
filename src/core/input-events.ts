@@ -26,7 +26,7 @@
  */
 
 import type { QuestionAnswerData } from "./question-core.ts";
-import type { LhMessage } from "./native-messages.ts";
+import type { LhMessage, RepoRef } from "./native-messages.ts";
 import {
 	activeProblemOf,
 	concludedByDismissalPair,
@@ -34,6 +34,7 @@ import {
 	newAnswerResult,
 	newNextMessage,
 	newProblemDismissedMarker,
+	newRepoContextMessage,
 	newThinkingMessage,
 	newUserMessage,
 	pendingProblemDismissalOf,
@@ -42,7 +43,10 @@ import { QUESTION_TOOLS, toolQuestionKind } from "./pending.ts";
 
 /** One client-originated input event (the POST body's `input`). */
 export type ChatInput =
-	| { type: "text"; text: string }
+	/** `repo` (Open repo, mid-session): a repository attached since the
+	 *  last send — its context marker lands just before this message. The
+	 *  parser checks shape only; the server resolves the path on disk. */
+	| { type: "text"; text: string; repo?: RepoRef }
 	| { type: "answer"; toolCallId: string; answer: QuestionAnswerData }
 	| { type: "continue" }
 	/** The practice dock's two buttons (owner, 2026-10-04): the learner's
@@ -150,6 +154,15 @@ export function dismissAppends(record: { messages: LhMessage[] }, input: Dismiss
 /** A malformed input event (the honest 400 — the orphan-trap discipline). */
 export class ChatInputError extends Error {}
 
+/** A text input's attached repo — shape only (the server resolves it). */
+function parseRepoRef(raw: unknown): RepoRef {
+	const repo = raw as Partial<RepoRef> | null;
+	if (typeof repo !== "object" || repo === null || typeof repo.path !== "string" || repo.path.length === 0) {
+		throw new ChatInputError("text input's repo requires a path");
+	}
+	return { path: repo.path, name: typeof repo.name === "string" ? repo.name : "" };
+}
+
 /** Parse and validate an input event off a request body. */
 export function parseChatInput(input: unknown): ChatInput {
 	if (typeof input !== "object" || input === null) throw new ChatInputError("input must be an object");
@@ -159,7 +172,9 @@ export function parseChatInput(input: unknown): ChatInput {
 			if (typeof i.text !== "string" || (i.text as string).trim().length === 0) {
 				throw new ChatInputError("text input requires non-empty text");
 			}
-			return { type: "text", text: i.text };
+			return i.repo === undefined
+				? { type: "text", text: i.text }
+				: { type: "text", text: i.text, repo: parseRepoRef(i.repo) };
 		case "answer":
 			if (typeof i.toolCallId !== "string" || i.toolCallId.length === 0) {
 				throw new ChatInputError("answer input requires toolCallId");
@@ -200,7 +215,11 @@ export function inputAppends(
 ): LhMessage[] {
 	switch (input.type) {
 		case "text":
-			return [...dismissalConclusion(record), newUserMessage(input.text)];
+			return [
+				...dismissalConclusion(record),
+				...(input.repo ? [newRepoContextMessage(input.repo)] : []),
+				newUserMessage(input.text),
+			];
 		case "answer": {
 			const pending = danglingQuestionOf(record.messages);
 			if (!pending || pending.toolCallId !== input.toolCallId) {

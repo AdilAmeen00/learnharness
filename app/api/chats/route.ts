@@ -1,6 +1,6 @@
 import { chainsForSelection, formatChainLine } from "@/src/core";
-import { newGraphContextMessage, type GraphContextPick } from "@/src/core";
-import { compactionInFlight, createChat, isTurnRunning, listChats, readSettingsRecord, stores, titleFromPrompt } from "@/src/server";
+import { newGraphContextMessage, newRepoContextMessage, type GraphContextPick, type LhMessage, type RepoRef } from "@/src/core";
+import { compactionInFlight, createChat, isTurnRunning, listChats, readSettingsRecord, RepoPathError, resolveRepo, stores, titleFromPrompt } from "@/src/server";
 import type { ChatListItem } from "@/src/core";
 
 /** The session picker's list: record-derived summaries (phase, pending
@@ -20,11 +20,22 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-	const body = (await req.json().catch(() => ({}))) as { title?: unknown; kind?: unknown; graphContext?: unknown };
+	const body = (await req.json().catch(() => ({}))) as { title?: unknown; kind?: unknown; graphContext?: unknown; repo?: unknown };
 	const title = typeof body.title === "string" ? body.title : "";
 	// Practice sessions (owner, 2026-10-04): kind "practice" marks the
 	// record — the practice agent + its tools from turn 1, no extraction.
 	const kind = body.kind === "practice" ? ("practice" as const) : undefined;
+	// The attached repo (Open repo): resolved BEFORE the record exists, so
+	// a path that no longer resolves refuses without leaving an orphan chat.
+	let repo: RepoRef | undefined;
+	if (typeof body.repo === "string") {
+		try {
+			repo = resolveRepo(body.repo);
+		} catch (err) {
+			if (err instanceof RepoPathError) return Response.json({ error: err.message }, { status: 400 });
+			throw err;
+		}
+	}
 	const chat = createChat(titleFromPrompt(title || "Untitled session"), kind);
 	// PER-SESSION MODELS (owner, 2026-09-28): a session owns its model +
 	// thinking level from birth — stamped verbatim from the STRONG slot,
@@ -59,13 +70,18 @@ export async function POST(req: Request) {
 					)
 					.slice(0, 64)
 			: [];
+	const context: LhMessage[] = [];
 	if (picks.length > 0) {
 		const byId = new Map(stores.graphStore.readNodes().map((n) => [n.id, n]));
 		const pickedNodes = picks.map((p) => byId.get(p.id)).filter((n) => n !== undefined);
 		const chainLines = chainsForSelection(pickedNodes, stores.graphStore.readChains()).map((c) =>
 			formatChainLine(c, Object.fromEntries(byId)),
 		);
-		stores.chatStore.saveMessages(chat.id, [newGraphContextMessage(picks, chainLines)]);
+		context.push(newGraphContextMessage(picks, chainLines));
 	}
+	// The repo marker follows any graph context, still before the
+	// learner's first message.
+	if (repo) context.push(newRepoContextMessage(repo));
+	if (context.length > 0) stores.chatStore.saveMessages(chat.id, context);
 	return Response.json({ id: chat.id, title: chat.title });
 }

@@ -86,6 +86,10 @@ export const POSITIONS_FILE = path.join(PATHS.graph, "positions.json");
  */
 export const RENDER_SETTINGS_FILE = path.join(PATHS.graph, "render-settings.json");
 
+/** Recently opened repos (the Open repo picker's list): one small JSON
+ *  array, newest first, read-modify-write. See src/server/repos.ts. */
+export const RECENT_REPOS_FILE = path.join(PATHS.data, "recent-repos.json");
+
 /** The graph-family FORMAT STAMP sidecar (schema-versioning wave,
  *  2026-10-10): one version for the whole family — the four JSONL ledgers,
  *  sources.json, render-settings.json. LAZY v1: absent = v1; the first

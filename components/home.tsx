@@ -7,12 +7,13 @@ import { GraphView } from "@/components/graph-view";
 import { MinimalHome } from "@/components/minimal-home";
 import { SetupDialog } from "@/components/setup-dialog";
 import { ComposerActions, NodePickerControl } from "@/components/composer-actions";
+import { RepoPickerControl } from "@/components/repo-picker";
 import { useStrongKeyless, useZeroKeys, ZeroKeysPill } from "@/components/setup-cta";
 import { DictationBar, joinDictation, useDictation } from "@/components/dictation";
 import { useFieldCycle } from "@/components/field-cycle";
 import { SidebarToggle } from "@/components/sidebar";
 import { StatsBar } from "@/components/stats-bar";
-import type { TurnUsage } from "@/src/core";
+import type { RepoRef, TurnUsage } from "@/src/core";
 
 /**
  * Home — the knowledge graph is the main view, full-bleed edge to edge
@@ -97,6 +98,16 @@ export function Home({
 	const [chainSelectOpen, setChainSelectOpen] = useState(false);
 	// The chain table is CONTROLLED off this id set (the lifted pick).
 	const pickedIds = useMemo(() => new Set(practiceProps.map((p) => p.id)), [practiceProps]);
+	// Open repo (teach mode): the pending repo a teach send carries. The
+	// send reads the ref mirror (it runs after the dictation flush).
+	const [repo, setRepo] = useState<RepoRef | null>(null);
+	const repoRef = useRef<RepoRef | null>(null);
+	const [repoError, setRepoError] = useState<string | null>(null);
+	const applyRepo = (next: RepoRef | null) => {
+		repoRef.current = next;
+		setRepo(next);
+		setRepoError(null);
+	};
 
 	/* FINISH DICTATION FIRST (owner, 2026-10-01): Enter may arrive while a
 	 * run is live with the topic still deferred in the run's buffer — stop
@@ -137,6 +148,9 @@ export function Home({
 			// graph-context marker as message[0] (a separate custom message
 			// before the learner's first user message, propositions + the
 			// chains among them); the prompt stays the learner's own words.
+			// The attached repo (Open repo) rides a TEACH creation the same
+			// way: the server writes its marker before the first message.
+			const attached = mode === "teach" ? repoRef.current : null;
 			const res = await fetch("/api/chats", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -144,9 +158,16 @@ export function Home({
 					title: t,
 					...(mode === "practice" ? { kind: "practice" } : {}),
 					...(practiceProps.length > 0 ? { graphContext: { propositions: practiceProps } } : {}),
+					...(attached ? { repo: attached.path } : {}),
 				}),
 			});
-			const { id } = (await res.json()) as { id: string };
+			const { id, error } = (await res.json()) as { id: string; error?: string };
+			if (!res.ok) {
+				// A refused repo (moved since it was picked) shows on the pill.
+				setBusy(false);
+				if (attached) setRepoError(error ?? `Could not open ${attached.path}`);
+				return;
+			}
 			// No settings PUT on create (per-session models, owner
 			// 2026-09-28): the SERVER stamps the newborn from the strong
 			// slot — the same default this surface's model control edits.
@@ -225,6 +246,9 @@ export function Home({
 								onOpen={() => setChainSelectOpen(true)}
 								onClear={() => setPracticeProps([])}
 							/>
+						)}
+						repo={mode === "teach" && (
+							<RepoPickerControl repo={repo} onPick={applyRepo} onClear={() => applyRepo(null)} error={repoError} />
 						)}
 						setup={zeroKeys ? (
 							<ZeroKeysPill inline onOpen={() => setSetupOpen(true)} />

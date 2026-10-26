@@ -48,13 +48,15 @@ import { PlanMarginalia, planExists } from "@/components/plan-window";
 import { MermaidOverlay, SessionMermaidContext } from "@/components/session-overlay";
 import { AbortTurnDialog, type AbortMode } from "@/components/abort-turn-dialog";
 import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
-import type { PlanBlockData } from "@/src/core";
+import type { PlanBlockData, RepoRef } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
 import { SessionMessageNavigation } from "@/components/session-navigation";
 import { PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
 import { GraphContextCard, type GraphContextData } from "@/components/graph-context-card";
+import { RepoContextCard, RepoPickerControl, type RepoContextData } from "@/components/repo-picker";
+import { ComposerActions } from "@/components/composer-actions";
 import { TopBar } from "@/components/top-bar";
 import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
 import type { LhViewMessage } from "@/src/core";
@@ -1129,6 +1131,16 @@ export function Chat({
 		void syncFromServer();
 	});
 
+	// Open repo (teach sessions): a repo picked mid-session waits here until
+	// the next plain send carries it (doSend). Mirrored to a ref — the send
+	// can run after the dictation flush, past this render's closure.
+	const [pendingRepo, setPendingRepo] = useState<RepoRef | null>(null);
+	const pendingRepoRef = useRef<RepoRef | null>(null);
+	const applyPendingRepo = (next: RepoRef | null) => {
+		pendingRepoRef.current = next;
+		setPendingRepo(next);
+	};
+
 	const onSend = () => {
 		if (pending || compacting) return;
 		/* FINISH DICTATION FIRST (owner, 2026-10-01): a learner who keeps
@@ -1147,7 +1159,12 @@ export function Chat({
 		if (!t) return;
 		draftRef.current = t; // the refusal flow's preserve-and-replay seam
 		applyText("");
-		void send({ type: "text", text: t });
+		// A repo attached since the last send (Open repo) rides this text
+		// input; its marker lands just before the message. Steers never
+		// carry it — it waits for the next plain send.
+		const repo = pendingRepoRef.current;
+		applyPendingRepo(null);
+		void send(repo ? { type: "text", text: t, repo } : { type: "text", text: t });
 	};
 
 	/* STEER VS SEND (owner arc 2026-10-03): a send while a turn runs steers
@@ -1359,6 +1376,8 @@ export function Chat({
 										switch (part.type) {
 											case "data-graph-context":
 												return <GraphContextCard key={pi} data={part.data as GraphContextData} />;
+											case "data-repo-context":
+												return <RepoContextCard key={pi} data={part.data as RepoContextData} />;
 											case "data-compaction":
 												return <CompactionMomentDivider key={pi} data={part.data as CompactionDividerData} />;
 											case "data-compaction-cut":
@@ -1617,6 +1636,11 @@ export function Chat({
 					dictationSlot={<DictationBar dictation={dictation} />}
 					dictationCancel={dictation.cancel}
 					queuedSteers={visibleQueuedSteers(steerQueue, nativeMessages)}
+					actions={kind === "teach" && (
+						<ComposerActions
+							repo={<RepoPickerControl repo={pendingRepo} onPick={applyPendingRepo} onClear={() => applyPendingRepo(null)} />}
+						/>
+					)}
 					setupCta={
 						zeroKeys ? (
 							<ZeroKeysPill onOpen={() => setSetupOpen(true)} />
@@ -1847,6 +1871,7 @@ function DockOverlay({
 	onOpenPlan,
 	dictationSlot,
 	dictationCancel,
+	actions,
 	setupCta,
 	queuedSteers,
 }: {
@@ -1895,6 +1920,9 @@ function DockOverlay({
 	/** The queued-steer indicator's lines (composer steering, 2026-10-03):
 	 *  already filtered by visibleQueuedSteers — only undrained steers. */
 	queuedSteers: QueuedSteerLine[];
+	/** The composer's action row (Open repo in teach sessions) — shown
+	 *  while the composer owns the band, never over a pending question. */
+	actions?: React.ReactNode;
 	/** The persistent setup CTA (BYOK, owner 2026-09-22): the same pill
 	 *  home and /chat/new carry, above the composer while slots are unset. */
 	setupCta?: React.ReactNode;
@@ -2276,6 +2304,7 @@ function DockOverlay({
 			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
 			<div ref={blockRef} className="relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
 				<div className={DOCK}>
+					{!pending && actions}
 					{setupCta}
 					{/* The queued-steer indicator (owner spec 2026-10-03): quiet
 					    one-liners above the shell - right-aligned to where its corner
