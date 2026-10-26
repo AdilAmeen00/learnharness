@@ -487,7 +487,14 @@ describe("tool descriptions carry mechanics only, no question-craft", () => {
 			path.join(PATHS.root, "src/agent/prompts/shared/40-formatting.md"),
 			"utf-8",
 		);
-		assert.ok(formatting.includes("- Bold: use bold to emphasize the main ideas"), "the inline-bold rule, in every agent");
+		assert.ok(
+			formatting.includes(
+				"- Bold: use bold to emphasize the main ideas, recommendations, and important conclusions in your responses. Bold key phrases within sentences so he can quickly scan the text. Keep the surrounding explanation in regular text, and use emphasis selectively so it remains useful.",
+			),
+			"the owner's wording, verbatim (he-voice), in every agent",
+		);
+		assert.ok(formatting.includes("the bold goes on the CLAIM, not on a label"), "the calibration: ideas, not headings (owner follow-up 2026-10-26)");
+		assert.ok(formatting.includes("reading only the bold phrases gives the argument's spine"), "the density target");
 		assert.ok(formatting.includes("the block-level emphasis device"), "the callout is the block device now");
 		assert.ok(!formatting.includes("the one emphasis device"), "the callout no longer claims to be the only one");
 
