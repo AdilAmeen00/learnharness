@@ -9,9 +9,26 @@ const EXCLUDED = [
 	"[data-session-find-exclude]", "[data-lh-menu]", '[role="menu"]', '[role="dialog"]', '[role="tooltip"]',
 ].join(",");
 
-interface TextPoint { node: Text; offset: number }
-interface DisplayCharacter { start: TextPoint; end: TextPoint; collapsedSpace: boolean }
-interface DisplayRun { text: string; characters: DisplayCharacter[] }
+export interface TextPoint { node: Text; offset: number }
+export interface DisplayCharacter {
+	start: TextPoint; end: TextPoint; collapsedSpace: boolean;
+	/** Set when the walk took a whole element as ONE character (the reading
+	 *  caret's formulas); start/end then span its visible text. */
+	atom?: Element;
+}
+export interface DisplayRun {
+	text: string; characters: DisplayCharacter[];
+	/** The innermost block element the run's text sits in. */
+	block: Element;
+}
+
+/** The reading caret's additions to the walk; Find passes none. */
+export interface DisplayWalkOptions {
+	/** Extra exclusions beyond EXCLUDED and the hidden checks. */
+	skip?: (element: Element, style: CSSStyleDeclaration | null) => boolean;
+	/** Elements walked as ONE character (U+FFFC in the run text). */
+	atom?: (element: Element) => boolean;
+}
 
 const BLOCK_DISPLAYS = new Set(["block", "flex", "grid", "list-item", "table", "table-row", "table-cell", "table-caption", "flow-root"]);
 
@@ -28,7 +45,7 @@ function hidden(element: Element, style: CSSStyleDeclaration | null): boolean {
 			|| style.visibility === "collapse" || style.opacity === "0" || style.contentVisibility === "hidden");
 }
 
-function displayedRoot(root: Element): boolean {
+export function displayedRoot(root: Element): boolean {
 	for (let element: Element | null = root; element; element = element.parentElement) {
 		if (hidden(element, styleOf(element))) return false;
 	}
@@ -38,18 +55,36 @@ function displayedRoot(root: Element): boolean {
 /** Preserve a source-point map while collapsing ordinary HTML whitespace.
  * This lets a phrase span inline markup, without concatenating separate cards
  * or paragraphs. Preformatted code/user text keeps its literal whitespace. */
-function displayRuns(root: Element): DisplayRun[] {
+export function displayRuns(root: Element, options: DisplayWalkOptions = {}): DisplayRun[] {
 	const runs: DisplayRun[] = [];
 	let text = "";
 	let characters: DisplayCharacter[] = [];
+	const blocks: Element[] = [root];
 	const flush = () => {
 		if (characters.at(-1)?.collapsedSpace) {
 			text = text.slice(0, -1);
 			characters.pop();
 		}
-		if (text) runs.push({ text, characters });
+		if (text) runs.push({ text, characters, block: blocks.at(-1)! });
 		text = "";
 		characters = [];
+	};
+	/** One character spanning an element's visible text (first to last
+	 *  text node, hidden parts — KaTeX's MathML — skipped). */
+	const appendAtom = (element: Element) => {
+		const texts: Text[] = [];
+		const collect = (node: Element) => {
+			for (const child of node.childNodes) {
+				if (child.nodeType === 3 && (child as Text).data.trim()) texts.push(child as Text);
+				else if (child.nodeType === 1 && !hidden(child as Element, styleOf(child as Element))) collect(child as Element);
+			}
+		};
+		collect(element);
+		const first = texts[0];
+		const last = texts.at(-1);
+		if (!first || !last) return;
+		text += "￼";
+		characters.push({ start: { node: first, offset: 0 }, end: { node: last, offset: last.data.length }, collapsedSpace: false, atom: element });
 	};
 	const append = (node: Text, whiteSpace: string) => {
 		const collapse = !["pre", "pre-wrap", "break-spaces"].includes(whiteSpace);
@@ -68,18 +103,25 @@ function displayRuns(root: Element): DisplayRun[] {
 	};
 	const visit = (element: Element) => {
 		const style = styleOf(element);
-		if (hidden(element, style)) return;
+		if (hidden(element, style) || options.skip?.(element, style)) return;
 		if (element.tagName === "BR") { flush(); return; }
 		const block = !!style && BLOCK_DISPLAYS.has(style.display);
+		if (options.atom?.(element)) {
+			if (block) flush();
+			if (block) blocks.push(element);
+			appendAtom(element);
+			if (block) { flush(); blocks.pop(); }
+			return;
+		}
 		// Without a CSS OM (test DOMs), the HTML defaults stand: only pre-family
 		// tags keep literal whitespace.
 		const whiteSpace = style?.whiteSpace ?? (element.matches("pre, listing, plaintext") ? "pre" : "normal");
-		if (block) flush();
+		if (block) { flush(); blocks.push(element); }
 		for (const child of element.childNodes) {
 			if (child.nodeType === 3) append(child as Text, whiteSpace);
 			else if (child.nodeType === 1) visit(child as Element);
 		}
-		if (block) flush();
+		if (block) { flush(); blocks.pop(); }
 	};
 	visit(root);
 	flush();

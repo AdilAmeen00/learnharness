@@ -18,11 +18,18 @@
 
 import { useEffect, useState } from "react";
 import {
+	CARET_DELAY_MAX_MS,
+	CARET_SPEED_STEPS,
+	DEFAULT_CARET_DELAY_MS,
+	DEFAULT_CARET_SPEED,
 	KEYBOARD_ACTIONS,
 	eventBinding,
 	formatBinding,
+	loadCaretPrefs,
 	loadOverrides,
+	saveCaretPrefs,
 	saveOverrides,
+	type CaretPrefs,
 	type KeyAction,
 	type KeyScope,
 } from "@/src/core";
@@ -31,8 +38,57 @@ import { SettingsRow } from "./controls.tsx";
 const SCOPES: { scope: KeyScope; label: string }[] = [
 	{ scope: "global", label: "Global" },
 	{ scope: "chat", label: "Chat" },
+	{ scope: "reading", label: "Reading" },
 	{ scope: "graph", label: "Graph" },
 ];
+
+/** The reading caret's hold speed + repeat delay (owner, 2026-10-27):
+ *  stored on this device (lh:caret) like the keymap; - / = step the same
+ *  speed live while reading. */
+function CaretSpeedRows() {
+	const [prefs, setPrefs] = useState<CaretPrefs>({ speed: DEFAULT_CARET_SPEED, delayMs: DEFAULT_CARET_DELAY_MS });
+	useEffect(() => setPrefs(loadCaretPrefs()), []);
+	const update = (next: CaretPrefs) => {
+		saveCaretPrefs(next);
+		setPrefs(next);
+	};
+	const speedIndex = CARET_SPEED_STEPS.indexOf(prefs.speed as (typeof CARET_SPEED_STEPS)[number]);
+	const slider = "h-1 w-32 cursor-pointer accent-foreground";
+	return (
+		<>
+			<SettingsRow label="Caret hold speed" hint="- / = change it while reading" testid="kbd-caret-speed">
+				<span className="flex items-center gap-2">
+					<input
+						type="range"
+						aria-label="Caret hold speed"
+						min={0}
+						max={CARET_SPEED_STEPS.length - 1}
+						step={1}
+						value={speedIndex < 0 ? CARET_SPEED_STEPS.indexOf(DEFAULT_CARET_SPEED as never) : speedIndex}
+						onChange={(e) => update({ ...prefs, speed: CARET_SPEED_STEPS[Number(e.target.value)]! })}
+						className={slider}
+					/>
+					<span className="w-12 text-right font-ui text-xs tabular-nums text-muted-foreground">{prefs.speed} /s</span>
+				</span>
+			</SettingsRow>
+			<SettingsRow label="Caret repeat delay" hint="Wait before a held key starts repeating" testid="kbd-caret-delay">
+				<span className="flex items-center gap-2">
+					<input
+						type="range"
+						aria-label="Caret repeat delay"
+						min={0}
+						max={CARET_DELAY_MAX_MS}
+						step={10}
+						value={prefs.delayMs}
+						onChange={(e) => update({ ...prefs, delayMs: Number(e.target.value) })}
+						className={slider}
+					/>
+					<span className="w-12 text-right font-ui text-xs tabular-nums text-muted-foreground">{prefs.delayMs} ms</span>
+				</span>
+			</SettingsRow>
+		</>
+	);
+}
 
 /** The overrides map after ONE change (pure — exported for tests):
  *  binding null = reset the action to its default (key removed). */
@@ -109,12 +165,18 @@ export function KeyboardSection() {
 									<SettingsRow
 										key={def.id}
 										label={def.label}
-										hint={def.displayOnly ? "Fixed — part of this screen" : undefined}
+										hint={
+											def.displayOnly
+												? def.scope === "reading"
+													? "Fixed — vim motion"
+													: "Fixed — part of this screen"
+												: undefined
+										}
 										testid={`kbd-row-${def.id}`}
 									>
 										<span className="flex items-center gap-2">
 											<kbd className="rounded-sm border border-border bg-muted px-1.5 py-0.5 font-ui text-xs">
-												{rebinding === def.id ? "Press keys…" : formatBinding(effective)}
+												{rebinding === def.id ? "Press keys…" : (def.display ?? formatBinding(effective))}
 											</kbd>
 											{def.displayOnly ? null : rebinding === def.id ? (
 												<button
@@ -150,6 +212,7 @@ export function KeyboardSection() {
 									</SettingsRow>
 								);
 							})}
+							{scope === "reading" && <CaretSpeedRows />}
 						</div>
 					</div>
 				);

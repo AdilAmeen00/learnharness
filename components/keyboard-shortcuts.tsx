@@ -153,10 +153,11 @@ export function KeyboardShortcuts() {
 function CheatSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
 	const backdropDismiss = useBackdropDismiss(onClose);
 	if (!open) return null;
-	const scopes = ["global", "chat", "graph"] as const;
+	const scopes = ["global", "chat", "reading", "graph"] as const;
 	const scopeLabels: Record<(typeof scopes)[number], string> = {
 		global: "Global",
 		chat: "Chat",
+		reading: "Reading",
 		graph: "Graph view",
 	};
 	return (
@@ -186,7 +187,7 @@ function CheatSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
 									<div key={a.id} className="flex items-center justify-between gap-4 text-sm">
 										<span className="text-muted-foreground">{a.label}</span>
 										<kbd className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-xs text-card-foreground">
-											{formatBinding(bindingForAction(a.id))}
+											{a.display ?? formatBinding(bindingForAction(a.id))}
 										</kbd>
 									</div>
 								))}

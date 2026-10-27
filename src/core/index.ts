@@ -75,6 +75,9 @@ export * from "./session-navigation.ts";
 export * from "./auth-keys.ts";
 // keyboard.ts: the shortcut registry + binding normalization (pure, browser-safe).
 export * from "./keyboard.ts";
+// reading-caret.ts (owner, 2026-10-27): the vim reading caret's motion rules
+// + hold-speed prefs (pure, browser-safe; the DOM seam supplies geometry).
+export * from "./reading-caret.ts";
 export * from "./coverage.ts";
 // session-markdown.ts (2026-09-27 engine; first consumer 2026-10-06): the
 // ONE session→markdown formatter — the extractor's view and the user-facing

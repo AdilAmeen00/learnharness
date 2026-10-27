@@ -51,6 +51,7 @@ import { ArrowRightIcon, DumbbellIcon, WaypointsIcon } from "lucide-react";
 import type { PlanBlockData, RepoRef } from "@/src/core";
 import { QuestionDock } from "@/components/question-dock";
 import { SessionFind } from "@/components/session-find";
+import { ReadingCaret } from "@/components/reading-caret";
 import { SessionMessageNavigation } from "@/components/session-navigation";
 import { PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
@@ -1326,6 +1327,8 @@ export function Chat({
 				</TopBar>
 
 				<SessionFind scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
+				{/* The vim reading caret (owner, 2026-10-27): same scope as Find. */}
+				<ReadingCaret scopeRef={sessionFindScopeRef} scrollContextRef={scrollContextRef} />
 				<div ref={sessionFindScopeRef} className="relative flex min-h-0 flex-1">
 				<Conversation className="h-full min-w-0 flex-1" initial="instant" contextRef={scrollContextRef}>
 					<SessionMessageNavigation />
@@ -2185,7 +2188,9 @@ function DockOverlay({
 	return (
 		<div className="pointer-events-none absolute inset-x-0 bottom-0" style={{ right: sbInset }}>
 			<div className="h-24 bg-gradient-to-t from-background via-background/85 to-transparent" />
-			<div ref={blockRef} className="relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
+			{/* data-reading-occluder: the reading caret keeps the transcript's
+			    caret above this band (reading-caret-dom visibleSpan). */}
+			<div ref={blockRef} data-reading-occluder="" className="relative bg-background pb-5" style={{ "--dock-max-h": dockMaxH ? `${dockMaxH}px` : undefined } as React.CSSProperties}>
 				<div className={DOCK}>
 					{!pending && actions}
 					{setupCta}

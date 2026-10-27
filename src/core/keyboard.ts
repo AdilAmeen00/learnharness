@@ -36,11 +36,18 @@ export type KeyAction =
 	| "question-pick-row"
 	| "question-submit"
 	| "open-settings"
-	| "toggle-user-thinking";
+	| "toggle-user-thinking"
+	| "caret-char"
+	| "caret-line"
+	| "caret-word"
+	| "caret-line-ends"
+	| "caret-block"
+	| "caret-ends"
+	| "caret-speed";
 
 /** Where the cheat sheet groups an action (display only — dispatch is
  *  global; a seam that isn't mounted simply no-ops). */
-export type KeyScope = "global" | "chat" | "graph";
+export type KeyScope = "global" | "chat" | "reading" | "graph";
 
 export interface KeyActionDef {
 	id: KeyAction;
@@ -52,6 +59,9 @@ export interface KeyActionDef {
 	 *  question dock's row machine); never dispatched from the registry,
 	 *  so they can't leak to pages where the surface isn't mounted. */
 	displayOnly?: boolean;
+	/** Literal key text for display (the vim keys: case matters, so the
+	 *  uppercasing formatBinding would mislead — "g" is not "G"). */
+	display?: string;
 }
 
 export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
@@ -85,6 +95,16 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "question-prev-row", label: "Question · previous row", scope: "chat", binding: "arrowup", displayOnly: true },
 	{ id: "question-pick-row", label: "Question · pick row", scope: "chat", binding: "space", displayOnly: true },
 	{ id: "question-submit", label: "Question · submit", scope: "chat", binding: "enter", displayOnly: true },
+	// The vim reading caret (owner, 2026-10-27) — displayOnly: the caret
+	// (components/reading-caret.tsx) owns these bare keys whenever no text
+	// field has focus; fixed, not rebindable.
+	{ id: "caret-char", label: "Caret · character left / right", scope: "reading", binding: "h", displayOnly: true, display: "h  l" },
+	{ id: "caret-line", label: "Caret · line down / up", scope: "reading", binding: "j", displayOnly: true, display: "j  k" },
+	{ id: "caret-word", label: "Caret · next word / previous word / word end", scope: "reading", binding: "w", displayOnly: true, display: "w  b  e" },
+	{ id: "caret-line-ends", label: "Caret · line start / end", scope: "reading", binding: "0", displayOnly: true, display: "0  $" },
+	{ id: "caret-block", label: "Caret · previous / next block", scope: "reading", binding: "{", displayOnly: true, display: "{  }" },
+	{ id: "caret-ends", label: "Caret · session start / open question", scope: "reading", binding: "g", displayOnly: true, display: "gg  G" },
+	{ id: "caret-speed", label: "Caret · hold speed slower / faster", scope: "reading", binding: "-", displayOnly: true, display: "-  =" },
 ];
 
 const STORAGE_KEY = "lh:keymap";
