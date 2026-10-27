@@ -495,6 +495,8 @@ describe("tool descriptions carry mechanics only, no question-craft", () => {
 		);
 		assert.ok(formatting.includes("the bold goes on the CLAIM, not on a label"), "the calibration: ideas, not headings (owner follow-up 2026-10-26)");
 		assert.ok(formatting.includes("reading only the bold phrases gives the argument's spine"), "the density target");
+		assert.ok(formatting.includes("four to six per paragraph"), "the density (owner, 2026-10-27: two-or-three came out as one)");
+		assert.ok(formatting.includes("a first pass over the bold alone"), "the two-pass reading aim, in the owner's terms");
 		assert.ok(formatting.includes("the block-level emphasis device"), "the callout is the block device now");
 		assert.ok(!formatting.includes("the one emphasis device"), "the callout no longer claims to be the only one");
 
