@@ -11,6 +11,8 @@ import { graphStore } from "../store/graph.ts";
 import { jobStore } from "../store/jobs.ts";
 import { settingsStore } from "../store/settings.ts";
 import { resolveSettings, type EffectiveSettings } from "../core/settings-resolution.ts";
+import { claudeCodeSettingsOf } from "../core/settings.ts";
+import { setClaudeCodeSettingsSource } from "../agent/claude-code/status.ts";
 /** The wired adapters. Satisfies core/graph.ts's GraphDeps structurally. */
 export const stores = {
 	chatStore,
@@ -18,6 +20,10 @@ export const stores = {
 	jobStore,
 	settingsStore,
 };
+
+// The Claude Code connection reads its two switches through this seam
+// (transport, background consent) — fresh per call, like effectiveSettings.
+setClaudeCodeSettingsSource(() => claudeCodeSettingsOf(settingsStore.readSettings()));
 
 export type Stores = typeof stores;
 

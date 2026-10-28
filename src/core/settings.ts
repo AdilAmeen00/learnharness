@@ -358,6 +358,22 @@ export interface CompactionSettings {
 	thresholdTokens?: number;
 }
 
+/**
+ * CLAUDE CODE (owner, 2026-10-28): the connection that runs agent runs on
+ * the learner's Claude subscription. `transport` is the one switch between
+ * launching `claude -p` directly and driving it through the Agent SDK;
+ * `allowBackgroundUse` is the ChatGPT/Copilot consent — off, background
+ * work on a Claude Code slot never spends the plan.
+ *
+ * FACTORY DEFAULTS: transport "cli", background use on (owner, 2026-10-28).
+ */
+export type ClaudeCodeTransport = "cli" | "sdk";
+export const CLAUDE_CODE_TRANSPORTS: readonly ClaudeCodeTransport[] = ["cli", "sdk"];
+export interface ClaudeCodeSettings {
+	transport?: ClaudeCodeTransport;
+	allowBackgroundUse?: boolean;
+}
+
 /** THE record. Every section optional (delta); unknown top-level keys are
  *  preserved verbatim by the sanitizer (forward-compat with newer records). */
 export interface UserSettings {
@@ -369,6 +385,7 @@ export interface UserSettings {
 	appearance?: AppearanceSettings;
 	graph?: GraphSettings;
 	compaction?: CompactionSettings;
+	claudeCode?: ClaudeCodeSettings;
 	[key: string]: unknown;
 }
 
@@ -394,6 +411,7 @@ export interface FactorySettings {
 	};
 	graph: Required<GraphSettings>;
 	compaction: Required<CompactionSettings>;
+	claudeCode: Required<ClaudeCodeSettings>;
 }
 
 export const FACTORY_SETTINGS: FactorySettings = {
@@ -410,7 +428,16 @@ export const FACTORY_SETTINGS: FactorySettings = {
 	},
 	graph: { enabled: true, rendering: true, extractionChunkTokens: 4096 },
 	compaction: { thresholdTokens: 150_000 },
+	claudeCode: { transport: "cli", allowBackgroundUse: true },
 };
+
+/** The Claude Code section resolved over the factory defaults. */
+export function claudeCodeSettingsOf(record: UserSettings | null | undefined): Required<ClaudeCodeSettings> {
+	return {
+		transport: record?.claudeCode?.transport ?? FACTORY_SETTINGS.claudeCode.transport,
+		allowBackgroundUse: record?.claudeCode?.allowBackgroundUse ?? FACTORY_SETTINGS.claudeCode.allowBackgroundUse,
+	};
+}
 
 /** The chunk budget's validated floor (GraphSettings.extractionChunkTokens
  *  — see its doc for the penny-batch rationale; the settings PUT names this
@@ -603,6 +630,16 @@ function sanitizeCompaction(raw: Record<string, unknown>): CompactionSettings {
 	return out;
 }
 
+function sanitizeClaudeCode(raw: Record<string, unknown>): ClaudeCodeSettings {
+	const out: ClaudeCodeSettings = {};
+	if (typeof raw.transport === "string" && (CLAUDE_CODE_TRANSPORTS as readonly string[]).includes(raw.transport)) {
+		out.transport = raw.transport as ClaudeCodeTransport;
+	}
+	const allow = boolOrDrop(raw.allowBackgroundUse);
+	if (allow !== undefined) out.allowBackgroundUse = allow;
+	return out;
+}
+
 /**
  * Coerce arbitrary JSON (disk file, network body) into a valid delta record:
  * known fields validated strictly (invalid ones drop/clamp per module doc),
@@ -633,6 +670,9 @@ export function sanitizeUserSettings(raw: unknown): UserSettings | null {
 		if (r.compaction !== undefined && r.compaction !== null && typeof r.compaction === "object") {
 			out.compaction = sanitizeCompaction(r.compaction as Record<string, unknown>);
 		}
+	}
+	if (r.claudeCode !== null && typeof r.claudeCode === "object" && !Array.isArray(r.claudeCode)) {
+		out.claudeCode = sanitizeClaudeCode(r.claudeCode as Record<string, unknown>);
 	}
 	// Unknown top-level keys ride along untouched (forward-compat). One
 	// known-DEAD key is stripped instead of riding: `chat` (the old

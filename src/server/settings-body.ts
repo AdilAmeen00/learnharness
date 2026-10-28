@@ -17,13 +17,15 @@ import type {
 	AgentSettings,
 	AppearanceSettings,
 	BackgroundModelRole,
+	ClaudeCodeSettings,
+	ClaudeCodeTransport,
 	CompactionSettings,
 	GeneralSettings,
 	GraphSettings,
 	ModelsSettings,
 	RoleModelOverride,
 } from "../core/settings.ts";
-import { BACKGROUND_MODEL_ROLES, COMPACTION_THRESHOLD_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS } from "../core/settings.ts";
+import { BACKGROUND_MODEL_ROLES, CLAUDE_CODE_TRANSPORTS, COMPACTION_THRESHOLD_FLOOR, EXTRACTION_CHUNK_TOKENS_FLOOR, MODEL_SLOTS } from "../core/settings.ts";
 import { WRITABLE_TOOL_KEYS } from "../core/pending.ts";
 
 /** Parsed-or-rejected — `ok: false` carries the 400's error message. */
@@ -375,6 +377,26 @@ export function parseCompactionSettingsBody(body: unknown): SettingsBodyResult<C
 	return { ok: true, settings };
 }
 
+/** claudeCode: { transport?: "cli" | "sdk", allowBackgroundUse?: boolean } */
+export function parseClaudeCodeSettingsBody(body: unknown): SettingsBodyResult<ClaudeCodeSettings> {
+	const raw = asRecord(body);
+	if (!raw) return { ok: false, error: "Invalid JSON body" };
+	const settings: ClaudeCodeSettings = {};
+	if (raw.transport !== undefined) {
+		if (typeof raw.transport !== "string" || !(CLAUDE_CODE_TRANSPORTS as readonly string[]).includes(raw.transport)) {
+			return { ok: false, error: `transport must be one of: ${CLAUDE_CODE_TRANSPORTS.join(", ")}` };
+		}
+		settings.transport = raw.transport as ClaudeCodeTransport;
+	}
+	if (raw.allowBackgroundUse !== undefined) {
+		if (typeof raw.allowBackgroundUse !== "boolean") {
+			return { ok: false, error: "allowBackgroundUse must be a boolean" };
+		}
+		settings.allowBackgroundUse = raw.allowBackgroundUse;
+	}
+	return { ok: true, settings };
+}
+
 /** The section→parser map for PUT /api/settings/[section] (the route also
  *  carries the special prompts sub-resource). */
 export const SETTINGS_SECTIONS = {
@@ -385,6 +407,7 @@ export const SETTINGS_SECTIONS = {
 	graph: parseGraphSettingsBody,
 	compaction: parseCompactionSettingsBody,
 	models: parseModelsSettingsBody,
+	claudeCode: parseClaudeCodeSettingsBody,
 } as const;
 
 export type SettingsSectionName = keyof typeof SETTINGS_SECTIONS;

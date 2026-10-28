@@ -22,6 +22,8 @@ import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
 import { toLlmMessages, nativeInputCause, PRACTICE_PROBLEM_TOOL } from "../core/native-messages.ts";
 import type { ChatGPTRequestCycle } from "./chatgpt-request-cycle.ts";
 import { usageWasAdmitted } from "./subscription-request-cycle.ts";
+import { isClaudeCodeProvider } from "./claude-code/model.ts";
+import { releaseClaudeCodeRun } from "./claude-code/run.ts";
 
 /**
  * The two teaching-side agents (docs/probe-teach-split.md): the PROBER and
@@ -250,6 +252,14 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 			opts.requestCycle?.prepare(request);
 		},
 	});
+	// A Claude Code engine runs the whole run in one process; it ends with
+	// the run (a posed question, the reply's end, an abort).
+	if (opts.chatId && isClaudeCodeProvider(engine.model.provider)) {
+		const chatId = opts.chatId;
+		agent.subscribe((event: AgentEvent) => {
+			if (event.type === "agent_end") releaseClaudeCodeRun(chatId);
+		});
+	}
 	if (opts.onUsage) {
 		agent.subscribe((event: AgentEvent) => {
 			if (event.type === "message_end" && event.message.role === "assistant" && "usage" in event.message) {

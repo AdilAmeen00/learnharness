@@ -18,6 +18,8 @@ export function isChatGPTPlan(model: string | undefined): boolean {
 }
 export function subscriptionLabel(model: string | undefined): string | undefined {
 	if (isChatGPTPlan(model)) return "ChatGPT";
+	// Claude Code runs on the learner's Claude plan (owner, 2026-10-28: $0).
+	if (model?.startsWith("claude-code:")) return "Claude Code";
 	return NATIVE_SUBSCRIPTIONS.find((p) => model?.startsWith(`${p.logicalId}:`))?.label;
 }
 export function isSubscriptionModel(model: string | undefined): boolean { return subscriptionLabel(model) !== undefined; }

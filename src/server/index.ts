@@ -33,6 +33,7 @@ export { effectivePromptSegments, allSegmentPaths, readPromptOverride } from "..
 // Importing this module runs the idempotent boot fill-gap — every consumer
 // keeps its plain process.env reads (that seam is the point).
 export * from "./keys.ts";
+export * from "./claude-code.ts";
 export * from "./search.ts";
 export * from "./repos.ts";
 export { authStore } from "../store/auth.ts";

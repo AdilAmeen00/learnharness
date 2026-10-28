@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { APP_IDENTITY, piEngineFor, type PiEngine } from "../models.ts";
 import { usageWasAdmitted } from "../subscription-request-cycle.ts";
 import { providerEventObserver } from "../provider-events.ts";
+import { releaseClaudeCodeRun } from "../claude-code/run.ts";
 import type { ModelRole } from "../../../config.ts";
 
 /**
@@ -65,10 +66,12 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 	let turns = 0;
 	// Debug recorder (owner, 2026-10-04): raw provider events per job run.
 	const providerEvents = opts.chatId ? providerEventObserver(opts.chatId, `job:${opts.role}`) : undefined;
+	// One unsaved conversation per invocation, stable through every turn
+	// (also the Claude Code run's key — released when this run settles).
+	const sessionId = randomUUID();
 	const agent = new Agent({
 		identity: APP_IDENTITY,
-		// One unsaved conversation per invocation, stable through every turn.
-		sessionId: randomUUID(),
+		sessionId,
 		initialState: {
 			systemPrompt: opts.systemPrompt,
 			model: engine.model,
@@ -128,6 +131,7 @@ export async function runSubagent(tools: AgentTool<any, any>[], opts: SubagentRu
 		else await agent.continue();
 	} finally {
 		opts.abortSignal?.removeEventListener("abort", onAbort);
+		releaseClaudeCodeRun(sessionId);
 	}
 
 	if (aborted || opts.abortSignal?.aborted) {

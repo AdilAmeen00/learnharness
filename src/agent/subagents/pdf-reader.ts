@@ -4,6 +4,7 @@ import { normalizeContext } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { resolveSourcePath } from "../tools/fs-shared.ts";
 import { piEngineFor, type PiEngine, type ThinkingLevel } from "../models.ts";
+import { releaseClaudeCodeRun } from "../claude-code/run.ts";
 import { providerEventObserver, type ProviderEventObserver } from "../provider-events.ts";
 import type { PdfResult, PdfToolInput } from "../../core/contracts.ts";
 import { getHeadless, type HeadlessApi } from "./headless.ts";
@@ -337,6 +338,9 @@ export async function runPdfReaderAgent(
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		return { path: pdfPath, question: input.question, brief: `PDF failed: the reader crashed — ${msg}`, pagesRead: [...read].sort((a, b) => a - b), pagesConsulted: [...consulted].sort((a, b) => a - b) };
+	} finally {
+		// A Claude Code engine keeps one process per run (no-op otherwise).
+		releaseClaudeCodeRun(sessionId);
 	}
 
 	// Iteration limit: deliver whatever was honestly consulted (never invention).

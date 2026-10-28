@@ -107,6 +107,7 @@ const nextConfig: NextConfig = {
 		"pdfjs-dist", // sources v0: bundling breaks its node fake-worker path
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
 		"@resvg/resvg-js", // native binding — same
+		"@anthropic-ai/claude-agent-sdk", // spawns Claude Code; runtime-loaded like the pi engine
 	],
 };
 
