@@ -252,12 +252,17 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 			opts.requestCycle?.prepare(request);
 		},
 	});
-	// A Claude Code engine runs the whole run in one process; it ends with
-	// the run (a posed question, the reply's end, an abort).
+	// A Claude Code engine keeps ONE process per session (owner, 2026-10-28):
+	// it stays up between turns — the learner's next input goes straight
+	// into it, so the conversation stays cached and the turn starts at once;
+	// 60 idle minutes close it (run.ts). A run that ended in an abort or an
+	// error closes it now: the next turn starts fresh from the record.
 	if (opts.chatId && isClaudeCodeProvider(engine.model.provider)) {
 		const chatId = opts.chatId;
 		agent.subscribe((event: AgentEvent) => {
-			if (event.type === "agent_end") releaseClaudeCodeRun(chatId);
+			if (event.type !== "agent_end") return;
+			const last = [...event.messages].reverse().find((m) => (m as { role?: string }).role === "assistant") as { stopReason?: string } | undefined;
+			if (last?.stopReason === "aborted" || last?.stopReason === "error") releaseClaudeCodeRun(chatId);
 		});
 	}
 	if (opts.onUsage) {

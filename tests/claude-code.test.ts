@@ -10,7 +10,7 @@ import { piEngineForSpec } from "../src/agent/models.ts";
 import { createTeacherAgent } from "../src/agent/teacher-agent.ts";
 import { CLAUDE_CODE_PROVIDER, claudeCodeModel, effortForLevel } from "../src/agent/claude-code/model.ts";
 import { comparable, normalizeMessages, planLaunch, sessionEntries, type AnthropicMessage } from "../src/agent/claude-code/session.ts";
-import { continuationOf, liveClaudeCodeRuns, relayEvent, requestParts, toMcpResult } from "../src/agent/claude-code/run.ts";
+import { continuationOf, liveClaudeCodeRuns, relayEvent, releaseClaudeCodeRun, requestParts, toMcpResult } from "../src/agent/claude-code/run.ts";
 import { handleMcpMessage, inProcessMcpServer, mcpHttpEndpoint } from "../src/agent/claude-code/mcp.ts";
 import { claudeCodeEnv, claudeCodeModelById, claudeCodePlanLimits, setClaudeCodeStatusForTests } from "../src/agent/claude-code/status.ts";
 import { TRANSPORT_NOTE } from "../src/agent/claude-code/stream.ts";
@@ -263,7 +263,9 @@ test("one process runs the whole run: tool call over MCP, the app runs the tool,
 	assert.ok(starts[0]!.args.includes("--disable-slash-commands"));
 	assert.deepEqual(log.find((e) => e.kind === "tools")!.names, ["echo"]);
 	assert.equal(log.find((e) => e.kind === "tool-result")!.result.content[0].text, "echo 1");
-	assert.equal(liveClaudeCodeRuns(), 0, "the run ended with the agent run");
+	assert.equal(liveClaudeCodeRuns(), 1, "the session's process stays up for its next turn");
+	releaseClaudeCodeRun("cc-chat-1");
+	assert.equal(liveClaudeCodeRuns(), 0);
 	assert.equal(claudeCodePlanLimits()?.sevenDay?.utilization, 0.5);
 });
 
@@ -287,6 +289,7 @@ test("an answer turn resumes the whole conversation as an interrupted turn", asy
 	assert.equal(start.history[1].content[0].name, "mcp__lh__echo");
 	assert.equal(start.history[2].content[0].type, "tool_result");
 	// The temporary session file is gone once the run ends.
+	releaseClaudeCodeRun("cc-chat-2");
 	await settle();
 	const projects = path.join(CONFIG_DIR, "projects");
 	const leftovers = existsSync(projects) ? readdirSync(projects).flatMap((d) => readdirSync(path.join(projects, d))).filter((f) => f.endsWith(".jsonl")) : [];
@@ -315,6 +318,59 @@ test("a message sent while a tool runs reaches Claude Code before the tool's res
 	assert.equal(log[stdinAt]!.duringTools, true);
 	assert.ok(stdinAt < resultAt, "input goes in before the tool result is released");
 	assert.equal(log.filter((e) => e.kind === "start").length, 1);
+	releaseClaudeCodeRun("cc-chat-3");
+});
+
+/** A question tool for the scripted runs: the stopper ends the run on a
+ *  clean ask_user_question, as it does in a real session. */
+const askTool: AgentTool<any> = {
+	name: "ask_user_question",
+	label: "ask",
+	description: "Ask the learner.",
+	parameters: Type.Object({ question: Type.String() }),
+	execute: async () => ({ content: [{ type: "text", text: "Question posed." }], details: {}, terminate: true }),
+};
+
+test("the session's process outlives the turn: the answer to a posed question goes straight back to it", async () => {
+	scenario([
+		{ content: [{ type: "text", text: "First, a question." }, { type: "tool_use", id: "toolu_q1", name: "mcp__lh__ask_user_question", input: { question: "A or B?" } }] },
+		{ content: [{ type: "text", text: "You said B." }] },
+		{ content: [{ type: "text", text: "And now C." }] },
+	]);
+	const tools = { ask_user_question: askTool };
+	const one = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-5", tools });
+	await one.prompt(userText("teach me"));
+	assert.equal(liveClaudeCodeRuns(), 1, "parked on the posed question");
+	// The record as the app persists it: the question call, then the
+	// learner's answer as its result (the in-memory placeholder never lands).
+	const asked = conversation(one.state.messages).filter((m) => (m as { role: string }).role !== "toolResult");
+	const answer = { role: "toolResult", toolCallId: "toolu_q1", toolName: "ask_user_question", content: [{ type: "text", text: "B" }], isError: false, timestamp: Date.now() } as AgentMessage;
+	const two = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-5", tools, messages: [...asked, answer] });
+	await two.continue();
+	assert.equal(((conversation(two.state.messages).at(-1) as AssistantMessage).content[0] as { text: string }).text, "You said B.");
+	// A plain follow-up after a plain reply rides the same process too.
+	const three = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-5", tools, messages: [...conversation(two.state.messages), userText("go on")] });
+	await three.continue();
+	assert.equal(((conversation(three.state.messages).at(-1) as AssistantMessage).content[0] as { text: string }).text, "And now C.");
+	await settle();
+	const log = fakeLog();
+	assert.equal(log.filter((e) => e.kind === "start").length, 1, "three turns, one process");
+	assert.equal(log.find((e) => e.kind === "tool-result")!.result.content[0].text, "B", "the answer is the waiting call's result");
+	assert.ok(log.some((e) => e.kind === "stdin" && JSON.stringify(e.content).includes("go on")));
+	releaseClaudeCodeRun("cc-chat-5");
+	assert.equal(liveClaudeCodeRuns(), 0);
+});
+
+test("a changed conversation (or a dead process) starts the next turn fresh", async () => {
+	scenario([{ content: [{ type: "text", text: "one" }] }, { content: [{ type: "text", text: "two" }] }]);
+	const one = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-6", tools: { echo: echoTool() } });
+	await one.prompt(userText("hello"));
+	const edited = [userText("hello, edited"), ...conversation(one.state.messages).slice(1), userText("next")];
+	const two = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-6", tools: { echo: echoTool() }, messages: edited });
+	await two.continue();
+	await settle();
+	assert.equal(fakeLog().filter((e) => e.kind === "start").length, 2, "the edit restarted it from the record");
+	releaseClaudeCodeRun("cc-chat-6");
 });
 
 test("aborting mid-run ends the process", async () => {
@@ -322,14 +378,32 @@ test("aborting mid-run ends the process", async () => {
 	let release!: () => void;
 	const gate = new Promise<void>((resolve) => (release = resolve));
 	const agent = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-4", tools: { echo: echoTool(gate) } });
+	let toolRunning = false;
+	agent.subscribe((event) => {
+		if (event.type === "tool_execution_start") toolRunning = true;
+	});
 	const running = agent.prompt(userText("go"));
-	for (let i = 0; i < 100 && !fakeLog().some((e) => e.kind === "tools"); i++) await settle(20);
+	for (let i = 0; i < 200 && !toolRunning; i++) await settle(20);
+	assert.ok(toolRunning, "the abort lands while the tool runs");
 	agent.abort();
 	release();
 	await running;
 	assert.equal(liveClaudeCodeRuns(), 0);
 	for (let i = 0; i < 100 && !fakeLog().some((e) => e.kind === "killed"); i++) await settle(30);
 	assert.ok(fakeLog().some((e) => e.kind === "killed"), `the fake got SIGTERM: ${JSON.stringify(fakeLog().map((e) => [e.pid, e.kind]))}`);
+});
+
+test("a turn stopped while Claude Code is still starting leaves nothing running", async () => {
+	scenario([{ content: [{ type: "text", text: "too late" }] }]);
+	const agent = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-7", tools: { echo: echoTool() } });
+	const running = agent.prompt(userText("go"));
+	await settle(20); // the process is launching
+	agent.abort();
+	await running;
+	for (let i = 0; i < 100 && fakeLog().some((e) => e.kind === "start") && !fakeLog().some((e) => e.kind === "killed"); i++) await settle(30);
+	assert.equal(liveClaudeCodeRuns(), 0, "no run registered after the cancel");
+	const log = fakeLog();
+	if (log.some((e) => e.kind === "start")) assert.ok(log.some((e) => e.kind === "killed"), "the late-starting process was ended");
 });
 
 async function oneCall(background = false, thinkingLevel?: "off" | "low"): Promise<AssistantMessage> {

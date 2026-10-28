@@ -36,8 +36,14 @@ import { claudeCodeConnected, claudeCodeStatus, claudeConfigDir, recordPlanLimit
  *      message, whose request now carries the results — they go back as the
  *      MCP answers (messages the learner sent meanwhile go in first, and
  *      Claude Code folds them in at that same boundary);
- *   4. the run ends when the app's loop ends it (releaseClaudeCodeRun) —
- *      a posed question, a finished job, an abort.
+ *   4. a background job's run ends with the job (releaseClaudeCodeRun). A
+ *      SESSION's run outlives its turn (owner, 2026-10-28): when the tutor
+ *      poses a question Claude Code is still waiting on that tool call, and
+ *      the learner's answer — the call's result in the next turn's request —
+ *      goes straight back as its MCP answer; after a plain reply, the next
+ *      input is simply its next message. The conversation stays cached and
+ *      the turn starts at once. 60 idle minutes, an abort or an error close
+ *      it.
  *
  * Every ask is checked against what this process has already seen: if the
  * app's conversation is anything other than "the previous ask + Claude
@@ -71,7 +77,9 @@ export class ClaudeCodeError extends Error {
 }
 
 const NO_FALLBACK = "No API-key fallback was used.";
-const IDLE_RELEASE_MS = 30 * 60_000;
+/** A run nobody has asked anything for this long closes (owner, 2026-10-28:
+ *  60 minutes — a session's learner may think for a while). */
+const IDLE_RELEASE_MS = 60 * 60_000;
 
 type Phase = "streaming" | "tools" | "idle" | "dead";
 
@@ -269,6 +277,11 @@ async function startRun(request: RunRequest): Promise<Run> {
 		throw new ClaudeCodeError(`Claude Code could not start: ${err instanceof Error ? err.message : String(err)}`);
 	}
 	if (plan.input) void run.proc.send(plan.input);
+	// A process gone on its own (a crash, a parked run killed outside the
+	// app) never takes a continuation: the next ask starts fresh.
+	void run.proc.exited.then(() => {
+		run.phase = "dead";
+	});
 	return run;
 }
 
@@ -408,32 +421,47 @@ async function streamReply(run: Run, emit: (event: StreamEvent) => void): Promis
  */
 export async function askClaudeCode(request: RunRequest, emit: (event: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
 	if (signal?.aborted) throw new ClaudeCodeError("The request was cancelled.");
-	let run = runs().get(request.key);
-	if (run?.idle) clearTimeout(run.idle);
-	const step = run && run.phase !== "dead" && run.spec === specOf(request) ? continuationOf(run.expected, run.phase, run.awaiting, request.messages) : null;
-	if (run && step) {
-		run.expected = request.messages;
-		run.phase = "streaming";
-		await deliver(run, step);
-	} else {
-		if (run) releaseClaudeCodeRun(request.key);
-		run = await startRun(request);
-		runs().set(request.key, run);
-	}
-	const live = run;
-	const onAbort = () => releaseClaudeCodeRun(request.key);
+	// Listen from the start: a cancel that lands while a process is still
+	// starting must end THAT process once it exists — the run's own end
+	// (the agent's release) may already have come and gone, and a process
+	// registered after it would sit orphaned until the idle timeout.
+	let cancelled = false;
+	const onAbort = () => {
+		cancelled = true;
+		releaseClaudeCodeRun(request.key);
+	};
 	signal?.addEventListener("abort", onAbort, { once: true });
+	let live: Run | undefined;
 	try {
+		const run = runs().get(request.key);
+		if (run?.idle) clearTimeout(run.idle);
+		const step = run && run.phase !== "dead" && run.spec === specOf(request) ? continuationOf(run.expected, run.phase, run.awaiting, request.messages) : null;
+		if (run && step) {
+			live = run;
+			run.expected = request.messages;
+			run.phase = "streaming";
+			await deliver(run, step);
+		} else {
+			if (run) releaseClaudeCodeRun(request.key);
+			const started = await startRun(request);
+			if (cancelled) {
+				endRun(started);
+				throw new ClaudeCodeError("The request was cancelled.");
+			}
+			runs().set(request.key, started);
+			live = started;
+		}
 		await streamReply(live, emit);
 	} catch (err) {
-		releaseClaudeCodeRun(request.key);
+		if (live && runs().get(request.key) === live) releaseClaudeCodeRun(request.key);
 		throw err;
 	} finally {
 		signal?.removeEventListener("abort", onAbort);
 	}
 	if (request.ephemeral) releaseClaudeCodeRun(request.key);
 	else if (runs().get(request.key) === live) {
-		// Safety net only: the app's loop releases the run when it ends.
+		// A session's run waits here for its next turn; a job's run is
+		// released by its own end first (the timer is then a safety net).
 		live.idle = setTimeout(() => {
 			if (runs().get(request.key) === live) releaseClaudeCodeRun(request.key);
 		}, IDLE_RELEASE_MS);
