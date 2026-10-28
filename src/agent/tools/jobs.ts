@@ -112,7 +112,8 @@ const VISUAL_DESCRIPTION =
 	"until correct. Use it for exact spatial pictures auto-layout diagrams can't do: coordinate geometry, number lines, vectors, " +
 	"function plots, physical layouts. For flows/relations/taxonomies write mermaid inline instead. " +
 	"The call is ASYNC and fire-and-forget — it resolves immediately and your turn continues; the verified figure arrives later " +
-	"as a new message.";
+	"as a new message. The maker can read the learner's files (read-only): to plot data from a file, give the path and the " +
+	"fields to plot — no need to copy the numbers into the brief.";
 const PDF_DESCRIPTION =
 	"Dispatch a background sub-agent that READS a learner-provided PDF on your behalf (triage, targeted extraction, visual page " +
 	"reading for equations and diagrams) and returns a brief with page citations. Use it when the learner gives you a PDF path " +

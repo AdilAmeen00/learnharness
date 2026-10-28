@@ -27,6 +27,7 @@ import React from "react";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { tmpdir } from "node:os";
 import { after, describe, it } from "node:test";
 import { Value } from "typebox/value";
 import { createFauxCore, fauxAssistantMessage, fauxToolCall, type FauxResponseStep, type ToolCall } from "@earendil-works/pi-ai";
@@ -748,6 +749,29 @@ describe("visual maker (fake model + fake headless)", () => {
 		const result = await runVisualMaker({ brief: "b" }, { engine: model, headless: fakeHeadless() });
 		assert.equal(result.svg, "");
 		assert.match(result.notes ?? "", /^FAILED: the maker never wrote an SVG/);
+	});
+
+	it("reads the learner's data file itself (read-only file tools, owner 2026-10-28)", async () => {
+		const dir = fs.mkdtempSync(path.join(tmpdir(), "lh-visual-"));
+		const file = path.join(dir, "face.json");
+		fs.writeFileSync(file, JSON.stringify({ inner_r_mm: [15, 10.4], outer_r_mm: [16.25, 12] }));
+		const seen: string[] = [];
+		const faux = createFauxCore({ tokenSize: { min: 64, max: 64 } });
+		faux.setResponses([
+			fauxAssistantMessage([fauxToolCall("read", { path: file }, { id: "f1" })], { stopReason: "toolUse" }),
+			(context) => {
+				seen.push(JSON.stringify(context.messages.filter((m) => m.role === "toolResult")));
+				return fauxAssistantMessage([fauxToolCall("write_svg", { svg: SVG_1 }, { id: "w1" })], { stopReason: "toolUse" });
+			},
+			fauxAssistantMessage([fauxToolCall("render_svg", {}, { id: "r1" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage("Plotted the two radii from the file."),
+		]);
+		const activities: string[] = [];
+		const result = await runVisualMaker({ brief: `Plot inner_r_mm and outer_r_mm from ${file}.` }, { engine: { model: faux.getModel(), streamFn: faux.streamSimple }, headless: fakeHeadless(), onActivity: (l) => activities.push(l) });
+		fs.rmSync(dir, { recursive: true, force: true });
+		assert.equal(result.svg, SVG_1);
+		assert.match(seen[0] ?? "", /inner_r_mm.*10\.4/, "the file's real values reached the maker");
+		assert.ok(activities.some((a) => a.startsWith("read: ")), "read activity recorded");
 	});
 
 	it("fails with a clear message when no Chrome is available", async () => {

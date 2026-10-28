@@ -7,6 +7,12 @@ import { releaseClaudeCodeRun } from "../claude-code/run.ts";
 import { providerEventObserver, type ProviderEventObserver } from "../provider-events.ts";
 import type { VisualResult } from "../../core/contracts.ts";
 import { getHeadless, type HeadlessApi } from "./headless.ts";
+import { runToolCall, type AgentTool } from "@earendil-works/pi-agent-core";
+import { healToolRecord } from "../tools/heal.ts";
+import { readTool } from "../tools/read.ts";
+import { lsTool } from "../tools/ls.ts";
+import { findTool } from "../tools/find.ts";
+import { grepTool } from "../tools/grep.ts";
 
 /**
  * The visual-maker sub-agent (vision §2.5): authors ONE precise SVG from a
@@ -39,7 +45,9 @@ export interface VisualMakerOptions {
 	/** Test seam: scripted engine; production uses the visualMaker role. */
 	engine?: PiEngine;
 	headless?: HeadlessApi;
-	/** Max model rounds (write/render cycles + final answer). Default 8. */
+	/** Max model rounds (file reads + write/render cycles + final answer).
+	 *  Default 10 (owner, 2026-10-28: 8 → 10 when the maker gained file
+	 *  reads, so reading never eats into drawing and checking). */
 	maxIterations?: number;
 	/** Live activity-line callback (updates the job record). */
 	onActivity?: (line: string) => void;
@@ -55,20 +63,25 @@ export interface VisualMakerOptions {
 const INSTRUCTIONS = `You are a visual maker — a diagram author + renderer for precise, spatial figures. You
 receive a brief describing ONE idea that needs exact placement (coordinate geometry, number lines,
 vectors, function plots, physical layouts — things auto-layout diagrams cannot express), and you return
-ONE clean, correct SVG. You never see the lesson; the brief is everything you know.
+ONE clean, correct SVG. You never see the lesson; the brief is everything you know about it. When the
+brief names a file of data, read it yourself and plot the real values.
 
 You do NOT decide what idea to show — the teacher already decided. Your job is faithful, precise
 composition, and above everything CORRECTNESS: the picture must not assert anything false. A right-angle
 mark on the wrong corner, a vector pointing the wrong way, a point plotted at the wrong coordinate is a
 failure even if it renders cleanly.
 
-Your three tools:
+Your three drawing tools:
 - write_svg({ svg }) — write the complete <svg>…</svg> source (overwrites the previous version).
 - edit_svg({ old_text, new_text }) — a surgical exact-match replacement in the current SVG:
   old_text must appear EXACTLY ONCE; it is replaced by new_text. Call write_svg first. For anything
   beyond a one-spot fix (new elements, restructured layout), write_svg the whole document again.
 - render_svg({}) — rasterize the current SVG to a PNG. The render arrives as an image in the
   message right after the tool result.
+
+Your file tools — read, ls, find, grep — are read-only access to the learner's files (paths relative
+to his home folder). Use them when the brief points at data: read the file, take the exact values, and
+plot those; never approximate data the file holds.
 
 THE ONE RULE THAT MATTERS MOST: verify by looking. You are done only when you have LOOKED at the
 rendered PNG and confirmed it is true to the brief. Rendering success only proves the SVG parsed; it
@@ -123,6 +136,10 @@ export function createVisualTools(): Record<string, Tool> {
 	};
 }
 
+/** The learner's files, read-only — the tutor's own file tools (with the
+ *  standard argument heal), executed through pi's tool runner. */
+const FILE_TOOLS: Record<string, AgentTool<any>> = healToolRecord({ read: readTool, ls: lsTool, find: findTool, grep: grepTool });
+
 const LOOK_MESSAGE =
 	"Here is the current render of your SVG — inspect it critically (geometry, labels, clipping, readability):";
 const UNLOOKED_FINISH_MESSAGE =
@@ -131,7 +148,7 @@ const UNLOOKED_FINISH_MESSAGE =
 export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerOptions = {}): Promise<VisualResult> {
 	const headless = opts.headless ?? getHeadless();
 	const brief = input.brief.trim() || "(no brief)";
-	const maxIterations = opts.maxIterations ?? 8;
+	const maxIterations = opts.maxIterations ?? 10;
 
 	const reason = headless.unavailableReason();
 	if (reason) {
@@ -139,14 +156,17 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 	}
 
 	const tools = createVisualTools();
-	const toolDeclarations = Object.values(tools);
+	const toolDeclarations: Tool[] = [
+		...Object.values(tools),
+		...Object.values(FILE_TOOLS).map(({ name, description, parameters }) => ({ name, description, parameters })),
+	];
 	const engine = opts.engine ?? piEngineFor("visualMaker");
 	// BYOK (owner, 2026-09-22): the level rides the injected engine — no
 	// factory pin to consult (engine.level is the resolved/clamped value).
 	const reasoning = engine.level;
 	const sessionId = randomUUID();
 	const prompt = [
-		"Brief for ONE precise figure (from the teacher, verbatim — it is everything you know):",
+		"Brief for ONE precise figure (from the teacher, verbatim — it and any files it names are everything you know):",
 		brief,
 		"",
 		"Author the SVG, render it, look at it, iterate until correct, then finish with your notes.",
@@ -270,8 +290,28 @@ export async function runVisualMaker(input: VisualMakerInput, opts: VisualMakerO
 						opts.onActivity?.("render_svg: render error");
 						toolResults.push(toolText(call.id, call.name, `RENDER ERROR (the SVG may be malformed): ${msg}. Fix it with write_svg and render again.`));
 					}
+				} else if (Object.hasOwn(FILE_TOOLS, call.name)) {
+					// The learner's files, read-only (owner, 2026-10-28): the same
+					// tools — argument repair, validation, caps — the tutor reads with.
+					const target = (call.arguments as { path?: unknown; pattern?: unknown }).path ?? (call.arguments as { pattern?: unknown }).pattern;
+					opts.onActivity?.(`${call.name}: ${typeof target === "string" ? target : "…"}`);
+					const outcome = await runToolCall(call, {
+						tools: Object.values(FILE_TOOLS),
+						assistantMessage: result,
+						context: { messages, tools: Object.values(FILE_TOOLS) },
+						signal: opts.abortSignal,
+					});
+					toolResults.push({
+						role: "toolResult",
+						toolCallId: call.id,
+						toolName: call.name,
+						content: outcome.result.content,
+						details: outcome.result.details,
+						isError: outcome.isError,
+						timestamp: Date.now(),
+					});
 				} else {
-					toolResults.push(toolText(call.id, call.name, `ERROR: unknown tool "${call.name}". Use write_svg, edit_svg, or render_svg.`));
+					toolResults.push(toolText(call.id, call.name, `ERROR: unknown tool "${call.name}". Use write_svg, edit_svg, render_svg, or the file tools (read, ls, find, grep).`));
 				}
 			}
 			// Message order: assistant tool-calls → tool results → render image.
