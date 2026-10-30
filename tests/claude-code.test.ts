@@ -1,5 +1,5 @@
 import { CONFIG_DIR, FAKE_BIN, LOG, SCENARIO } from "./claude-code-setup.ts";
-import { test, beforeEach } from "node:test";
+import { test, afterEach, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -10,7 +10,7 @@ import { piEngineForSpec } from "../src/agent/models.ts";
 import { createTeacherAgent } from "../src/agent/teacher-agent.ts";
 import { CLAUDE_CODE_PROVIDER, claudeCodeModel, effortForLevel } from "../src/agent/claude-code/model.ts";
 import { comparable, normalizeMessages, planLaunch, sessionEntries, type AnthropicMessage } from "../src/agent/claude-code/session.ts";
-import { continuationOf, liveClaudeCodeRuns, relayEvent, releaseClaudeCodeRun, requestParts, toMcpResult } from "../src/agent/claude-code/run.ts";
+import { continuationOf, liveClaudeCodeRuns, relayEvent, releaseAllClaudeCodeRuns, releaseClaudeCodeRun, requestParts, toMcpResult } from "../src/agent/claude-code/run.ts";
 import { handleMcpMessage, inProcessMcpServer, mcpHttpEndpoint } from "../src/agent/claude-code/mcp.ts";
 import { claudeCodeEnv, claudeCodeModelById, claudeCodePlanLimits, setClaudeCodeStatusForTests } from "../src/agent/claude-code/status.ts";
 import { TRANSPORT_NOTE } from "../src/agent/claude-code/stream.ts";
@@ -24,7 +24,7 @@ const settingsStore = stores.settingsStore;
 // ─── the scripted fake ──────────────────────────────────────────────────────
 
 type Block = Record<string, unknown>;
-function scenario(replies: { content?: Block[]; failure?: { kind: string; text: string } }[], extra: Record<string, unknown> = {}) {
+function scenario(replies: { content?: Block[]; failure?: { kind: string; text: string }; abandonAfterMs?: number }[], extra: Record<string, unknown> = {}) {
 	writeFileSync(SCENARIO, JSON.stringify({ replies, ...extra }));
 	rmSync(`${SCENARIO}.next`, { force: true });
 	rmSync(LOG, { force: true });
@@ -34,6 +34,9 @@ function fakeLog(): Record<string, any>[] {
 	return readFileSync(LOG, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
 }
 const settle = (ms = 150) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A failed test must not leave a kept process holding the runner open.
+afterEach(() => releaseAllClaudeCodeRuns());
 
 beforeEach(() => {
 	setClaudeCodeStatusForTests({ installed: true, bin: FAKE_BIN, version: "9.9.9", loggedIn: true, authMethod: "claude.ai", subscriptionType: "max", checkedAt: Date.now() + 1e9 });
@@ -359,6 +362,32 @@ test("the session's process outlives the turn: the answer to a posed question go
 	assert.ok(log.some((e) => e.kind === "stdin" && JSON.stringify(e.content).includes("go on")));
 	releaseClaudeCodeRun("cc-chat-5");
 	assert.equal(liveClaudeCodeRuns(), 0);
+});
+
+test("a question Claude Code gave up on is never answered with its stale reply: the next turn starts fresh", async () => {
+	scenario([
+		// Claude Code abandons the waiting call (its idle timeout) and carries
+		// on alone — re-asking without the answer, into the void.
+		{ content: [{ type: "tool_use", id: "toolu_t1", name: "mcp__lh__ask_user_question", input: { question: "A or B?" } }], abandonAfterMs: 300 },
+		{ content: [{ type: "text", text: "STALE: asked again without seeing the answer" }] },
+		{ content: [{ type: "text", text: "Fresh: you said B." }] },
+	]);
+	const tools = { ask_user_question: askTool };
+	const one = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-8", tools });
+	await one.prompt(userText("teach me"));
+	for (let i = 0; i < 100 && !fakeLog().some((e) => e.kind === "abandoned"); i++) await settle(30);
+	await settle(300); // the stale reply lands unread
+	const asked = conversation(one.state.messages).filter((m) => (m as { role: string }).role !== "toolResult");
+	const answer = { role: "toolResult", toolCallId: "toolu_t1", toolName: "ask_user_question", content: [{ type: "text", text: "B" }], isError: false, timestamp: Date.now() } as AgentMessage;
+	const two = createTeacherAgent(undefined, { engine: engine(), chatId: "cc-chat-8", tools, messages: [...asked, answer] });
+	await two.continue();
+	assert.equal(((conversation(two.state.messages).at(-1) as AssistantMessage).content[0] as { text: string }).text, "Fresh: you said B.");
+	await settle();
+	const starts = fakeLog().filter((e) => e.kind === "start");
+	assert.equal(starts.length, 2, "the abandoned run was replaced from the record");
+	assert.equal(starts[1]!.interrupted, true, "the answer reached the new process as the question's result");
+	assert.equal(starts[0]!.idleTimeout, "0", "Claude Code's 5-minute idle timeout is off");
+	releaseClaudeCodeRun("cc-chat-8");
 });
 
 test("a changed conversation (or a dead process) starts the next turn fresh", async () => {

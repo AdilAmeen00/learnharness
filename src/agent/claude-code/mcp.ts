@@ -32,6 +32,18 @@ export interface McpToolHost {
 	tools(): McpToolDef[];
 	/** `toolUseId` is Claude Code's tool_use id (`_meta["claudecode/toolUseId"]`). */
 	call(name: string, args: unknown, toolUseId: string | undefined): Promise<McpCallResult>;
+	/** Claude Code gave up on a call (a timeout, a cancel): nobody will
+	 *  read its answer, and Claude Code has moved on without it. */
+	cancel?(toolUseId: string): void;
+}
+
+/** Per host: JSON-RPC request id → the tool_use id of a call in flight
+ *  (an MCP cancel names the request, never the tool call). */
+const inflight = new WeakMap<McpToolHost, Map<string | number, string>>();
+function inflightOf(host: McpToolHost): Map<string | number, string> {
+	let calls = inflight.get(host);
+	if (!calls) inflight.set(host, (calls = new Map()));
+	return calls;
 }
 
 interface JsonRpcMessage {
@@ -52,7 +64,14 @@ const PROTOCOL_FALLBACK = "2025-06-18";
 
 /** One JSON-RPC message → its response (null for a notification). */
 export async function handleMcpMessage(host: McpToolHost, msg: JsonRpcMessage): Promise<JsonRpcResponse | null> {
-	if (msg.id === undefined || msg.id === null) return null;
+	if (msg.id === undefined || msg.id === null) {
+		if (msg.method === "notifications/cancelled") {
+			const requestId = msg.params?.requestId as string | number | undefined;
+			const toolUseId = requestId === undefined ? undefined : inflightOf(host).get(requestId);
+			if (toolUseId) host.cancel?.(toolUseId);
+		}
+		return null;
+	}
 	const id = msg.id;
 	const ok = (result: unknown): JsonRpcResponse => ({ jsonrpc: "2.0", id, result });
 	const fail = (code: number, message: string): JsonRpcResponse => ({ jsonrpc: "2.0", id, error: { code, message } });
@@ -72,10 +91,13 @@ export async function handleMcpMessage(host: McpToolHost, msg: JsonRpcMessage): 
 			if (typeof name !== "string") return fail(-32602, "tools/call needs a tool name");
 			const meta = msg.params?._meta as Record<string, unknown> | undefined;
 			const toolUseId = typeof meta?.["claudecode/toolUseId"] === "string" ? (meta["claudecode/toolUseId"] as string) : undefined;
+			if (toolUseId) inflightOf(host).set(id, toolUseId);
 			try {
 				return ok(await host.call(name, msg.params?.arguments ?? {}, toolUseId));
 			} catch (err) {
 				return ok({ content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }], isError: true });
+			} finally {
+				inflightOf(host).delete(id);
 			}
 		}
 		default:
@@ -170,6 +192,16 @@ async function serve(req: IncomingMessage, res: ServerResponse): Promise<void> {
 	res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" });
 	const keepAlive = setInterval(() => res.write(": keep-alive\n\n"), 15_000);
 	keepAlive.unref();
+	// The client hanging up before the answer = Claude Code gave up on the
+	// call (its timeout): report it, so its run is never continued as if
+	// Claude Code were still waiting.
+	res.on("close", () => {
+		if (res.writableEnded) return;
+		for (const m of requests) {
+			const toolUseId = (m.params?._meta as Record<string, unknown> | undefined)?.["claudecode/toolUseId"];
+			if (m.method === "tools/call" && typeof toolUseId === "string") host.cancel?.(toolUseId);
+		}
+	});
 	try {
 		await Promise.all(
 			requests.map(async (m) => {

@@ -97,6 +97,10 @@ interface Run {
 	waiting: Map<string, (result: McpCallResult) => void>;
 	/** Results that arrived before their MCP call. */
 	ready: Map<string, McpCallResult>;
+	/** Calls Claude Code gave up on (timeout, cancel): it moved on without them. */
+	abandoned: Set<string>;
+	/** The id of the last message relayed (its own late frames are benign). */
+	lastMessageId?: string;
 	/** A finished turn still owes its `result` message. */
 	owesResult: boolean;
 	projectDir: string;
@@ -113,6 +117,11 @@ function runs(): Map<string, Run> {
 /** How many runs are live (tests, diagnostics). */
 export function liveClaudeCodeRuns(): number {
 	return runs().size;
+}
+
+/** End every live run (tests; a shutting-down server). */
+export function releaseAllClaudeCodeRuns(): void {
+	for (const key of [...runs().keys()]) releaseClaudeCodeRun(key);
 }
 
 /** End a run: kill its process, answer its waiting tool calls, delete its
@@ -251,6 +260,7 @@ async function startRun(request: RunRequest): Promise<Run> {
 		awaiting: [],
 		waiting: new Map(),
 		ready: new Map(),
+		abandoned: new Set(),
 		owesResult: false,
 		projectDir,
 		sessionIds,
@@ -258,6 +268,10 @@ async function startRun(request: RunRequest): Promise<Run> {
 	const host: McpToolHost = {
 		tools: () => run.tools,
 		call: (_name, _args, toolUseId) => awaitResult(run, toolUseId),
+		cancel: (toolUseId) => {
+			run.waiting.delete(toolUseId);
+			run.abandoned.add(toolUseId);
+		},
 	};
 	try {
 		run.proc = await launchClaudeCode({
@@ -391,7 +405,10 @@ async function streamReply(run: Run, emit: (event: StreamEvent) => void): Promis
 		if (message.type !== "stream_event" || message.parent_tool_use_id) continue;
 		const event = message.event as StreamEvent | undefined;
 		if (!event?.type) continue;
-		if (event.type === "message_start") started = true;
+		if (event.type === "message_start") {
+			started = true;
+			run.lastMessageId = (event.message as { id?: string } | undefined)?.id;
+		}
 		if (!started) continue;
 		if (event.type === "content_block_start") {
 			const block = event.content_block as { type?: string; id?: string } | undefined;
@@ -415,6 +432,46 @@ async function streamReply(run: Run, emit: (event: StreamEvent) => void): Promis
 }
 
 /**
+ * Did Claude Code move on while nobody was asking? A kept run is only
+ * continued while Claude Code is still exactly where the app left it —
+ * waiting on the tool calls of the last relayed message, or idle after it.
+ * Anything it did on its own since (gave up on a call, recorded a tool
+ * result itself, started another message, finished another turn) means its
+ * conversation is no longer the app's: the next ask starts fresh from the
+ * record. Reads (and consumes) what arrived unread; benign frames are
+ * absorbed here.
+ */
+function movedOn(run: Run): boolean {
+	if (run.awaiting.some((id) => run.abandoned.has(id))) return true;
+	for (const message of run.proc.drain()) {
+		if (message.parent_tool_use_id) continue;
+		switch (message.type) {
+			case "rate_limit_event":
+				recordPlanLimits(message.rate_limit_info as Parameters<typeof recordPlanLimits>[0]);
+				break;
+			case "result":
+				if (!run.owesResult) return true;
+				run.owesResult = false;
+				break;
+			case "stream_event":
+				if ((message.event as { type?: string } | undefined)?.type === "message_start") return true;
+				break;
+			case "assistant": {
+				const id = (message.message as { id?: string } | undefined)?.id;
+				if (id && id !== run.lastMessageId) return true;
+				break;
+			}
+			case "user": {
+				const content = (message.message as { content?: unknown } | undefined)?.content;
+				if (Array.isArray(content) && content.some((b: { type?: string; tool_use_id?: string }) => b.type === "tool_result" && run.awaiting.includes(String(b.tool_use_id)))) return true;
+				break;
+			}
+		}
+	}
+	return false;
+}
+
+/**
  * Answer one model call: continue the key's live run when the conversation
  * is its continuation, otherwise (re)start one; then relay the next reply.
  * Rejects with ClaudeCodeError carrying the learner-facing text.
@@ -435,7 +492,7 @@ export async function askClaudeCode(request: RunRequest, emit: (event: StreamEve
 	try {
 		const run = runs().get(request.key);
 		if (run?.idle) clearTimeout(run.idle);
-		const step = run && run.phase !== "dead" && run.spec === specOf(request) ? continuationOf(run.expected, run.phase, run.awaiting, request.messages) : null;
+		const step = run && run.phase !== "dead" && run.spec === specOf(request) && !movedOn(run) ? continuationOf(run.expected, run.phase, run.awaiting, request.messages) : null;
 		if (run && step) {
 			live = run;
 			run.expected = request.messages;

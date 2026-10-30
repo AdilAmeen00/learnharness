@@ -46,6 +46,9 @@ export interface LaunchSpec {
 export interface ClaudeCodeProcess {
 	/** The next message; undefined once the process has ended. */
 	next(): Promise<ClaudeCodeMessage | undefined>;
+	/** Whatever has arrived and not been read yet (non-blocking) — what
+	 *  Claude Code did while nobody was asking. */
+	drain(): ClaudeCodeMessage[];
 	/** Queue a user message (folded in at Claude Code's next boundary).
 	 *  Resolves once Claude Code has it — a tool result released after
 	 *  this can never overtake it. */
@@ -78,6 +81,11 @@ class Queue<T> {
 		for (const waiter of this.waiters.splice(0)) waiter(undefined);
 		for (const { taken } of this.items.splice(0)) taken();
 	}
+	drain(): T[] {
+		const queued = this.items.splice(0);
+		for (const { taken } of queued) taken();
+		return queued.map(({ item }) => item);
+	}
 	next(): Promise<T | undefined> {
 		const queued = this.items.shift();
 		if (queued) {
@@ -106,8 +114,12 @@ function userMessage(content: AnthropicBlock[]) {
 function launchEnv(spec: LaunchSpec): NodeJS.ProcessEnv {
 	return claudeCodeEnv({
 		ENABLE_TOOL_SEARCH: "false",
-		// A tool call waits while the app's loop runs the tool.
+		// A tool call waits while the app's loop runs the tool — and, in a
+		// kept session, while the learner thinks about a posed question.
 		MCP_TOOL_TIMEOUT: String(24 * 60 * 60 * 1000),
+		// Over HTTP (the `claude -p` route) Claude Code also aborts a call
+		// after 5 silent minutes (verified against 2.1.314); 0 disables it.
+		CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT: "0",
 		// Tool results reach the model whole, as with every other provider.
 		MAX_MCP_OUTPUT_TOKENS: "1000000",
 		DISABLE_AUTOUPDATER: "1",
@@ -206,6 +218,7 @@ async function launchCli(spec: LaunchSpec): Promise<ClaudeCodeProcess> {
 	return {
 		exited,
 		next: () => messages.next(),
+		drain: () => messages.drain(),
 		send(content) {
 			if (ended || !child.stdin.writable) return Promise.resolve();
 			return new Promise<void>((resolve) => {
@@ -289,6 +302,7 @@ async function launchSdk(spec: LaunchSpec): Promise<ClaudeCodeProcess> {
 		// Never spawned (an early failure): the pump's end is the end.
 		exited: Promise.race([childExited, pumpEnded.then(() => (spawned ? childExited : undefined))]),
 		next: () => messages.next(),
+		drain: () => messages.drain(),
 		async send(content) {
 			// Taken by the SDK's input pump, then one macrotask for its write
 			// to reach Claude Code's stdin ahead of anything sent after.

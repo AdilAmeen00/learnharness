@@ -41,6 +41,7 @@ log({
 	effort: arg("--effort") ?? null,
 	resume: resume ?? null,
 	interrupted: process.env.CLAUDE_CODE_RESUME_INTERRUPTED_TURN === "1",
+	idleTimeout: process.env.CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT ?? null,
 	thinkingOff: process.env.MAX_THINKING_TOKENS === "0",
 	anthropicKey: Object.keys(process.env).some((k) => k.startsWith("ANTHROPIC_")),
 	systemPrompt,
@@ -55,11 +56,12 @@ function nextReply() {
 }
 
 let rpcId = 0;
-async function rpc(method, params) {
+async function rpc(method, params, signal) {
 	const res = await fetch(mcpUrl, {
 		method: "POST",
 		headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
 		body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
+		signal,
 	});
 	const text = await res.text();
 	if ((res.headers.get("content-type") ?? "").includes("text/event-stream")) {
@@ -125,7 +127,16 @@ async function runTurn(input) {
 		}
 		waitingTools = true;
 		for (const block of reply.content.filter((b) => b.type === "tool_use")) {
-			const result = await rpc("tools/call", { name: block.name.replace(/^mcp__lh__/, ""), arguments: block.input, _meta: { "claudecode/toolUseId": block.id } });
+			// A scripted timeout: give up on the call like Claude Code's idle
+			// timeout does — hang up, record an error result, carry on alone.
+			const giveUp = reply.abandonAfterMs ? AbortSignal.timeout(reply.abandonAfterMs) : undefined;
+			let result;
+			try {
+				result = await rpc("tools/call", { name: block.name.replace(/^mcp__lh__/, ""), arguments: block.input, _meta: { "claudecode/toolUseId": block.id } }, giveUp);
+			} catch {
+				result = { content: [{ type: "text", text: "MCP tool idle timeout" }], isError: true };
+				log({ kind: "abandoned", id: block.id });
+			}
 			log({ kind: "tool-result", id: block.id, result, queuedBefore: queued.length });
 			out({ type: "user", parent_tool_use_id: null, session_id: sessionId, message: { role: "user", content: [{ type: "tool_result", tool_use_id: block.id, content: result.content, is_error: result.isError ?? false }] } });
 		}
