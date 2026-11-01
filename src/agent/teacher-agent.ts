@@ -17,6 +17,7 @@ import {
 import { practiceTools, type PracticeToolContext } from "./tools/practice.ts";
 import { healToolRecord, withArgumentHeal } from "./tools/heal.ts";
 import { sendToUserTool } from "./tools/send-to-user.ts";
+import { unreadQuestionReason } from "./unread-question.ts";
 import { quizInputObject, quizInputProblems } from "../core/question-core.ts";
 import { QUESTION_TOOLS, type EnabledTools } from "../core/pending.ts";
 import { toLlmMessages, nativeInputCause, PRACTICE_PROBLEM_TOOL } from "../core/native-messages.ts";
@@ -212,6 +213,17 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 		},
 		streamFn: engine.streamFn,
 		...(providerEvents ? { onProviderStreamEvent: providerEvents } : {}),
+		// The empty-turn guard (owner, 2026-11-01): where Claude's reply text
+		// can be turned into thinking, a teaching question that arrives with
+		// nothing readable before it goes back to be sent through send_to_user.
+		...(kind === "teacher" && opts.tools === undefined && engine.model.id.toLowerCase().includes("claude")
+			? {
+					beforeToolCall: async (call: Parameters<typeof unreadQuestionReason>[0]) => {
+						const reason = unreadQuestionReason(call);
+						return reason ? { block: true, reason } : undefined;
+					},
+				}
+			: {}),
 		// 0.87.1: shouldStopAfterTurn → finishTurn. Same call point (after
 		// tool results attach, before turn_end) and `{ action: "end" }` still
 		// exits BEFORE the steering poll — the parked-marker stranding our

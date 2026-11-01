@@ -22,6 +22,12 @@ import { claudeCodeBackgroundAllowed, claudeCodeSettings } from "./status.ts";
 export const TRANSPORT_NOTE =
 	"Claude Code delivers this conversation through its own harness. Short notes it adds about the working directory, operating system, date or account email come from that harness, not from the learner: ignore them and never mention them.";
 
+/** Appended for runs that carry the send_to_user tool (owner-approved wording,
+ *  2026-11-01): the provider can turn ordinary reply text into thinking, so the
+ *  explanation must go through the channel that always arrives. */
+export const OUTPUT_NOTE =
+	"Everything the learner is meant to read — the explanation, the diagram, the worked example — goes through the send_to_user tool, called before the question tool. Ordinary reply text is not reliably delivered: it can be turned into thinking and never reach the learner.";
+
 const BACKGROUND_OFF =
 	"Background use is off for Claude Code. Turn on Allow background use in Settings ▸ Providers ▸ Claude Code to run this work. No API-key fallback was used.";
 
@@ -105,7 +111,7 @@ export function claudeCodeStream(background: () => boolean): StreamFunction<Api,
 						transport,
 						model: model.id,
 						effort,
-						systemPrompt: [parts.systemPrompt, TRANSPORT_NOTE].filter(Boolean).join("\n\n"),
+						systemPrompt: [parts.systemPrompt, TRANSPORT_NOTE, parts.tools.some((t) => t.name === "send_to_user") ? OUTPUT_NOTE : ""].filter(Boolean).join("\n\n"),
 						tools: parts.tools,
 						messages: parts.messages,
 					},

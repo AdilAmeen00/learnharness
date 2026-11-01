@@ -13,7 +13,7 @@ import { comparable, normalizeMessages, planLaunch, sessionEntries, type Anthrop
 import { continuationOf, liveClaudeCodeRuns, relayEvent, releaseAllClaudeCodeRuns, releaseClaudeCodeRun, requestParts, toMcpResult } from "../src/agent/claude-code/run.ts";
 import { handleMcpMessage, inProcessMcpServer, mcpHttpEndpoint } from "../src/agent/claude-code/mcp.ts";
 import { claudeCodeEnv, claudeCodeModelById, claudeCodePlanLimits, setClaudeCodeStatusForTests } from "../src/agent/claude-code/status.ts";
-import { TRANSPORT_NOTE } from "../src/agent/claude-code/stream.ts";
+import { OUTPUT_NOTE, TRANSPORT_NOTE } from "../src/agent/claude-code/stream.ts";
 import { claudeCodeSettingsOf, sanitizeUserSettings } from "../src/core/settings.ts";
 import { parseClaudeCodeSettingsBody } from "../src/server/settings-body.ts";
 import { subscriptionLabel } from "../src/core/prices.ts";
@@ -452,6 +452,24 @@ test("a single call (no session id) works and leaves nothing running; thinking o
 	assert.equal((message.content[0] as { text: string }).text, "one shot");
 	assert.equal(liveClaudeCodeRuns(), 0);
 	assert.equal(fakeLog().find((e) => e.kind === "start")!.thinkingOff, true);
+});
+
+test("the output note rides only with runs that carry send_to_user", async () => {
+	const call = async (toolNames: string[]) => {
+		scenario([{ content: [{ type: "text", text: "ok" }] }]);
+		const e = piEngineForSpec({ provider: CLAUDE_CODE_PROVIDER, id: "claude-haiku-5-5" }, false);
+		const tools = toolNames.map((name) => ({ name, description: "d", parameters: Type.Object({ message: Type.Optional(Type.String()) }) }));
+		const stream = e.streamFn(e.model, normalizeContext({ systemPrompt: "s", messages: [{ role: "user", content: "hi", timestamp: Date.now() }], tools }), {});
+		for await (const event of stream) if (event.type === "done" || event.type === "error") break;
+		await settle(50);
+		const starts = fakeLog().filter((x) => x.kind === "start");
+		return starts[starts.length - 1]!.systemPrompt as string;
+	};
+	const withChannel = await call(["send_to_user", "quiz"]);
+	assert.ok(withChannel.endsWith(OUTPUT_NOTE) && withChannel.includes(TRANSPORT_NOTE));
+	rmSync(LOG, { force: true });
+	const without = await call(["quiz"]);
+	assert.ok(without.endsWith(TRANSPORT_NOTE) && !without.includes(OUTPUT_NOTE));
 });
 
 test("failures carry honest text: plan limit, API-key login, background off", async () => {
